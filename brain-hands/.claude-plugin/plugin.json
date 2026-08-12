@@ -1,0 +1,13 @@
+{
+  "name": "brain-hands",
+  "displayName": "Brain-Hands",
+  "version": "0.1.0",
+  "description": "Brain/hands split for Claude Code: your smartest (most expensive) model plans, decomposes and reviews as the brain; implementation work is dispatched to the cheaper 'hands' executor subagent.",
+  "author": {
+    "name": "cookaihq"
+  },
+  "homepage": "https://github.com/cookaihq/plugin-marketplace",
+  "repository": "https://github.com/cookaihq/plugin-marketplace",
+  "license": "MIT",
+  "keywords": ["delegation", "model-routing", "subagents", "quota", "planning"]
+}

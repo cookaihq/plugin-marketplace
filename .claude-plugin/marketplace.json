@@ -1,0 +1,13 @@
+{
+  "name": "plugin-marketplace",
+  "owner": {
+    "name": "cookaihq"
+  },
+  "plugins": [
+    {
+      "name": "brain-hands",
+      "source": "./brain-hands",
+      "description": "Brain/hands split: keep your smartest model planning and reviewing, dispatch implementation to cheaper executor subagents."
+    }
+  ]
+}
