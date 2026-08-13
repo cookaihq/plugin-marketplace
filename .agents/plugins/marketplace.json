@@ -1,14 +1,14 @@
 {
-  "name": "tikin-plugins",
+  "name": "plugin-marketplace",
   "interface": {
-    "displayName": "tikin Plugins"
+    "displayName": "cookaihq Plugins"
   },
   "plugins": [
     {
       "name": "tikin-plugin",
       "source": {
-        "source": "url",
-        "url": "https://github.com/cookaihq/tikin-agent-plugin.git"
+        "source": "local",
+        "path": "./tikin-plugin"
       },
       "policy": {
         "installation": "AVAILABLE",

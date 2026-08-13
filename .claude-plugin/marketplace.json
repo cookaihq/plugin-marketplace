@@ -1,5 +1,6 @@
 {
   "name": "plugin-marketplace",
+  "description": "cookaihq's plugins for Claude Code and Codex: model-routing workflow tooling and social-media data access.",
   "owner": {
     "name": "cookaihq"
   },
@@ -8,6 +9,12 @@
       "name": "brain-hands",
       "source": "./brain-hands",
       "description": "Brain/hands split: keep your smartest model planning and reviewing, dispatch implementation to cheaper executor subagents."
+    },
+    {
+      "name": "tikin-plugin",
+      "source": "./tikin-plugin",
+      "description": "Social-media data for AI agents via tikin. Download media and fetch posts, profiles, comments, search results, trends, and analytics across TikTok, Douyin, Instagram, YouTube, Twitter/X, Threads, Xiaohongshu, and more through tikin's unified REST API using your own tikin API key.",
+      "category": "web-integration"
     }
   ]
 }

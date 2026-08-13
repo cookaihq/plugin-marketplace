@@ -6,6 +6,12 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 2
 
+# tikin-plugin ships as one plugin inside the cookaihq/plugin-marketplace repo, so the
+# Claude and Codex marketplace manifests live one level up at the marketplace root.
+MARKET_ROOT="$(cd "$ROOT/.." && pwd)"
+export CLAUDE_MARKETPLACE="$MARKET_ROOT/.claude-plugin/marketplace.json"
+export CODEX_MARKETPLACE="$MARKET_ROOT/.agents/plugins/marketplace.json"
+
 pass=0
 fail=0
 check() {
@@ -19,9 +25,9 @@ check() {
 # 1. Required Claude and Codex manifests exist and are valid JSON.
 required_json=(
   .claude-plugin/plugin.json
-  .claude-plugin/marketplace.json
   .codex-plugin/plugin.json
-  .agents/plugins/marketplace.json
+  "$CLAUDE_MARKETPLACE"
+  "$CODEX_MARKETPLACE"
 )
 for manifest in "${required_json[@]}"; do
   if [ -f "$manifest" ] && python3 -c "import json; json.load(open('$manifest'))" 2>/dev/null; then
@@ -34,15 +40,16 @@ done
 # 2. Plugin names and release versions are synchronized across both plugin formats.
 python3 - <<'PY' 2>/dev/null
 import json
+import os
 import re
 
 with open('.claude-plugin/plugin.json') as handle:
     claude_plugin = json.load(handle)
 with open('.codex-plugin/plugin.json') as handle:
     codex_plugin = json.load(handle)
-with open('.claude-plugin/marketplace.json') as handle:
+with open(os.environ['CLAUDE_MARKETPLACE']) as handle:
     claude_marketplace = json.load(handle)
-with open('.agents/plugins/marketplace.json') as handle:
+with open(os.environ['CODEX_MARKETPLACE']) as handle:
     codex_marketplace = json.load(handle)
 
 for manifest in (claude_plugin, codex_plugin):

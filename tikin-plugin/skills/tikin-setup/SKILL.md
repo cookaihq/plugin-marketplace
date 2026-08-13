@@ -34,9 +34,9 @@ will be written and get confirmation. Use exactly one matching path:
 
 | Host | Install path |
 |---|---|
-| Codex plugin | If absent, run `codex plugin marketplace add cookaihq/tikin-agent-plugin`, then `codex plugin add tikin-plugin@tikin-plugins`. |
-| Claude Code plugin | If absent, run `claude plugin marketplace add cookaihq/tikin-agent-plugin`, then `claude plugin install tikin-plugin@tikin-plugins --scope <scope>` with the confirmed `user`, `project`, or `local` scope. |
-| Agent Skills client | Run `npx skills add cookaihq/tikin-agent-plugin --skill '*'` and select only the active agent and requested project/user scope. |
+| Codex plugin | If absent, run `codex plugin marketplace add cookaihq/plugin-marketplace`, then `codex plugin add tikin-plugin@plugin-marketplace`. |
+| Claude Code plugin | If absent, run `claude plugin marketplace add cookaihq/plugin-marketplace`, then `claude plugin install tikin-plugin@plugin-marketplace --scope <scope>` with the confirmed `user`, `project`, or `local` scope. |
+| Agent Skills client | Run `npx skills add https://github.com/cookaihq/plugin-marketplace/tree/main/tikin-plugin --skill '*'` and select only the active agent and requested project/user scope. |
 
 Do not install through several channels in the same host. If an old manual copy contains
 unprefixed skill names, migrate to the managed channel and remove only obsolete tikin-owned
@@ -50,15 +50,18 @@ configuration in the current session, then tell the user when a new session is r
 On the first tikin use in each Agent session, start one best-effort update check. Do not repeat it
 for later tikin calls in the same session and do not block the user's current task.
 
-1. Detect the channel that owns the current tikin installation.
+1. Detect the channel that owns the current tikin installation. `<marketplace>` below is the
+   marketplace that owns it: `plugin-marketplace` for current installs, `tikin-plugins` for
+   installs made from the retired `cookaihq/tikin-agent-plugin` marketplace, which now forwards
+   to the same content.
 2. Check only that channel and only tikin-owned components.
-3. For Codex, record the installed version from `codex plugin list --marketplace tikin-plugins
-   --json`, refresh with `codex plugin marketplace upgrade tikin-plugins`, then run `codex plugin
-   add tikin-plugin@tikin-plugins`. Repeated `plugin add` is the idempotent reinstall/update path
+3. For Codex, record the installed version from `codex plugin list --marketplace <marketplace>
+   --json`, refresh with `codex plugin marketplace upgrade <marketplace>`, then run `codex plugin
+   add tikin-plugin@<marketplace>`. Repeated `plugin add` is the idempotent reinstall/update path
    for Git-backed plugin sources; compare the before/after installed versions only when reporting
    whether an update occurred.
 4. For Claude Code, read the owning installation's `scope` from `claude plugin list --json`, then
-   use `claude plugin update tikin-plugin@tikin-plugins --scope <scope>`. Do not let the command's
+   use `claude plugin update tikin-plugin@<marketplace> --scope <scope>`. Do not let the command's
    `user` default redirect an update for a `project`, `local`, or `managed` installation.
 5. For Agent Skills, use the source-aware `npx skills` updater for installed `tikin-*` skills only.
 6. If an update succeeds, keep using the already-loaded version for the current task and state

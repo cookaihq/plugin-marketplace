@@ -34,31 +34,31 @@ configuration and endpoint-search helpers) — no SDK, package install, or build
 (Claude Code, Codex, Cursor, and more):
 
 ```bash
-npx skills add cookaihq/tikin-agent-plugin
+npx skills add https://github.com/cookaihq/plugin-marketplace/tree/main/tikin-plugin
 ```
 
 To run setup before a full install, invoke just the bootstrap skill:
 
 ```bash
-npx skills use cookaihq/tikin-agent-plugin@tikin-setup --agent codex
+npx skills use https://github.com/cookaihq/plugin-marketplace/tree/main/tikin-plugin@tikin-setup --agent codex
 ```
 
 ### Claude Code — plugin marketplace
 
 ```bash
-claude plugin marketplace add cookaihq/tikin-agent-plugin
-claude plugin install tikin-plugin@tikin-plugins
+claude plugin marketplace add cookaihq/plugin-marketplace
+claude plugin install tikin-plugin@plugin-marketplace
 ```
 
 Or test a local checkout: `claude --plugin-dir /path/to/tikin-plugin`.
 
 ### Codex — plugin marketplace
 
-Codex can install the native plugin directly from this repository's marketplace:
+Codex can install the native plugin directly from the marketplace that hosts it:
 
 ```bash
-codex plugin marketplace add cookaihq/tikin-agent-plugin
-codex plugin add tikin-plugin@tikin-plugins
+codex plugin marketplace add cookaihq/plugin-marketplace
+codex plugin add tikin-plugin@plugin-marketplace
 ```
 
 Start a new Codex session after installation so the bundled skills are discovered.
@@ -68,8 +68,8 @@ Start a new Codex session after installation so the bundled skills are discovere
 - **skills CLI installs:** check with `npx skills list`, update with `npx skills update`.
 - **Claude Code marketplace installs:** manage via the `/plugin` interface inside Claude Code.
 - **Codex marketplace installs:** inspect with `codex plugin list`; refresh with `codex plugin
-  marketplace upgrade tikin-plugins`, then reinstall/update with `codex plugin add
-  tikin-plugin@tikin-plugins`.
+  marketplace upgrade plugin-marketplace`, then reinstall/update with `codex plugin add
+  tikin-plugin@plugin-marketplace`.
 
 On the first tikin use in each agent session, the skills perform a best-effort, non-blocking
 version check. When an update is available, only tikin's installed plugin or skills are updated;
@@ -199,7 +199,7 @@ You: What's trending on TikTok in the US right now?
 ## Links
 
 - Website <https://tikin.net> · Console <https://console.tikin.net> ·
-  GitHub <https://github.com/cookaihq/tikin-agent-plugin>
+  GitHub <https://github.com/cookaihq/plugin-marketplace/tree/main/tikin-plugin>
 - [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## License

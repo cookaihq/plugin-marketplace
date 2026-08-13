@@ -1,0 +1,6 @@
+# Local worktrees created by worktree-dev
+.worktrees/
+
+# OS
+.DS_Store
+Thumbs.db
