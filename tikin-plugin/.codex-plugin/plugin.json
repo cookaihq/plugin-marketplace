@@ -1,0 +1,43 @@
+{
+  "name": "tikin-plugin",
+  "version": "0.2.0",
+  "description": "Social-media data for AI agents via tikin. Download media and fetch posts, profiles, comments, search results, trends, and analytics across TikTok, Douyin, Instagram, YouTube, Twitter/X, Threads, Xiaohongshu, and more through tikin's unified REST API using your own tikin API key. Includes setup and authentication routing, REST best practices, endpoint discovery across 1,000+ API endpoints, platform-specific skills, and task skills for downloads, analytics, research, listening, comparison, comment analysis, and bulk export.",
+  "author": {
+    "name": "cookaihq",
+    "url": "https://github.com/cookaihq"
+  },
+  "homepage": "https://tikin.net",
+  "repository": "https://github.com/cookaihq/tikin-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "tikin",
+    "social-media",
+    "social-media-api",
+    "social-media-data",
+    "video-download",
+    "creator-analytics",
+    "trend-research",
+    "social-listening",
+    "competitor-analysis",
+    "hashtag-research",
+    "data-extraction"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "tikin",
+    "shortDescription": "Social-media data, downloads, and analytics via tikin",
+    "longDescription": "Use tikin skills to fetch social-media posts, profiles, comments, search results, trends, and analytics, download media, discover supported endpoints, and configure API access.",
+    "developerName": "cookaihq",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://tikin.net",
+    "defaultPrompt": [
+      "Set up tikin and configure my API key.",
+      "Download media from this social-media URL.",
+      "Analyze this creator's recent content."
+    ]
+  }
+}

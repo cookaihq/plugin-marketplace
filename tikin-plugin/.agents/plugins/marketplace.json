@@ -1,0 +1,20 @@
+{
+  "name": "tikin-plugins",
+  "interface": {
+    "displayName": "tikin Plugins"
+  },
+  "plugins": [
+    {
+      "name": "tikin-plugin",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/cookaihq/tikin-agent-plugin.git"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

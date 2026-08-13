@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import sys
+import tempfile
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+DEFAULT_SETTINGS = {"routing": {"default": "auto", "platforms": {}}}
+ENV_ASSIGNMENT = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+MODES = ("auto", "confirm")
+PLATFORMS = (
+    "douyin",
+    "instagram",
+    "threads",
+    "tiktok",
+    "twitter",
+    "xiaohongshu",
+    "youtube",
+)
+
+
+def config_dir():
+    root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return root / "tikin"
+
+
+def restrict_permissions(path=None, fd=None):
+    if fd is not None:
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(fd, 0o600)
+    if path is not None:
+        try:
+            os.chmod(path, 0o600)
+        except NotImplementedError:
+            if os.name != "nt":
+                raise
+
+
+def atomic_write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        restrict_permissions(fd=fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(temporary_name, path)
+        restrict_permissions(path=path)
+    except BaseException:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def initialize():
+    directory = config_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    legacy_env_path = directory / "env"
+    env_path = directory / ".env"
+    settings_path = directory / "settings.json"
+    for path in (legacy_env_path, env_path, settings_path):
+        if path.is_symlink():
+            raise SystemExit(f"refusing symbolic link at {path}")
+    if not env_path.exists() and legacy_env_path.is_file():
+        os.replace(legacy_env_path, env_path)
+    if legacy_env_path.is_file():
+        restrict_permissions(path=legacy_env_path)
+    if env_path.is_file():
+        restrict_permissions(path=env_path)
+
+    if not settings_path.exists():
+        atomic_write(settings_path, json.dumps(DEFAULT_SETTINGS, indent=2) + "\n")
+    elif settings_path.is_file():
+        restrict_permissions(path=settings_path)
+
+
+def parse_env_file(path):
+    values = {}
+    if not path.is_file():
+        return values
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        match = ENV_ASSIGNMENT.match(raw_line.strip())
+        if not match:
+            continue
+        key, raw_value = match.groups()
+        try:
+            parsed = shlex.split(raw_value, posix=True)
+        except ValueError:
+            continue
+        values[key] = parsed[0] if len(parsed) == 1 else raw_value
+    return values
+
+
+def read_settings():
+    path = config_dir() / "settings.json"
+    if not path.is_file():
+        return DEFAULT_SETTINGS
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    routing = settings.get("routing")
+    if not isinstance(routing, dict) or routing.get("default") not in MODES:
+        raise SystemExit("settings.json has an invalid routing.default")
+    platforms = routing.get("platforms")
+    if not isinstance(platforms, dict):
+        raise SystemExit("settings.json has an invalid routing.platforms")
+    for platform, mode in platforms.items():
+        if platform not in PLATFORMS or mode not in MODES:
+            raise SystemExit("settings.json has an invalid platform routing override")
+    return settings
+
+
+def set_key():
+    if sys.stdin.isatty():
+        secret = getpass.getpass("TIKIN_API_KEY: ")
+    else:
+        secret = sys.stdin.read().rstrip("\r\n")
+    if not secret or "\n" in secret or "\r" in secret or "\0" in secret:
+        raise SystemExit("refusing an empty or multi-line API key")
+
+    path = config_dir() / ".env"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    replacement = f"TIKIN_API_KEY={shlex.quote(secret)}"
+    updated = []
+    replaced = False
+    for line in lines:
+        match = ENV_ASSIGNMENT.match(line.strip())
+        if match and match.group(1) == "TIKIN_API_KEY":
+            if not replaced:
+                updated.append(replacement)
+                replaced = True
+            continue
+        updated.append(line)
+    if not replaced:
+        updated.append(replacement)
+    atomic_write(path, "\n".join(updated) + "\n")
+
+
+def status():
+    file_values = parse_env_file(config_dir() / ".env")
+    settings = read_settings()
+    if os.environ.get("TIKIN_API_KEY"):
+        key_source = "environment"
+    elif file_values.get("TIKIN_API_KEY"):
+        key_source = "file"
+    else:
+        key_source = "missing"
+    print(
+        json.dumps(
+            {
+                "key_configured": key_source != "missing",
+                "key_source": key_source,
+                "settings": {"routing": settings["routing"]},
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def set_routing(default_mode, platform_values, clear_platforms):
+    settings = read_settings()
+    routing = settings["routing"]
+    if default_mode:
+        routing["default"] = default_mode
+    if clear_platforms:
+        routing["platforms"] = {}
+    for value in platform_values:
+        if "=" not in value:
+            raise SystemExit("platform overrides must use PLATFORM=MODE")
+        platform, mode = value.split("=", 1)
+        if platform not in PLATFORMS:
+            raise SystemExit(f"unsupported platform: {platform}")
+        if mode not in MODES:
+            raise SystemExit(f"unsupported routing mode: {mode}")
+        routing["platforms"][platform] = mode
+    routing["platforms"] = dict(sorted(routing["platforms"].items()))
+    atomic_write(
+        config_dir() / "settings.json",
+        json.dumps(settings, indent=2, sort_keys=True) + "\n",
+    )
+
+
+def get_policy(platform):
+    if platform not in PLATFORMS:
+        raise SystemExit(f"unsupported platform: {platform}")
+    routing = read_settings()["routing"]
+    print(routing["platforms"].get(platform, routing["default"]))
+
+
+def validate_key(timeout):
+    file_values = parse_env_file(config_dir() / ".env")
+    key = os.environ.get("TIKIN_API_KEY") or file_values.get("TIKIN_API_KEY")
+    if not key:
+        raise SystemExit("missing TIKIN_API_KEY")
+    base_url = (
+        os.environ.get("TIKIN_BASE_URL")
+        or file_values.get("TIKIN_BASE_URL")
+        or "https://console.tikin.net"
+    )
+    request = Request(
+        f"{base_url.rstrip('/')}/api/usage/token/",
+        headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            if 200 <= response.status < 300:
+                print("valid")
+                return
+    except HTTPError as error:
+        if error.code in (401, 403):
+            raise SystemExit("invalid TIKIN_API_KEY") from None
+        raise SystemExit(f"key validation failed with HTTP {error.code}") from None
+    except (URLError, TimeoutError):
+        raise SystemExit("key validation could not reach tikin") from None
+    raise SystemExit("key validation returned an unexpected response")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Manage local tikin configuration safely.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("init")
+    subparsers.add_parser("set-key")
+    subparsers.add_parser("status")
+    set_routing_parser = subparsers.add_parser("set-routing")
+    set_routing_parser.add_argument("--default", choices=MODES)
+    set_routing_parser.add_argument("--platform", action="append", default=[])
+    set_routing_parser.add_argument("--clear-platforms", action="store_true")
+    get_policy_parser = subparsers.add_parser("get-policy")
+    get_policy_parser.add_argument("platform", choices=PLATFORMS)
+    validate_parser = subparsers.add_parser("validate")
+    validate_parser.add_argument("--timeout", type=float, default=10.0)
+    args = parser.parse_args()
+
+    if args.command == "init":
+        initialize()
+    elif args.command == "set-key":
+        initialize()
+        set_key()
+    elif args.command == "status":
+        initialize()
+        status()
+    elif args.command == "set-routing":
+        initialize()
+        set_routing(args.default, args.platform, args.clear_platforms)
+    elif args.command == "get-policy":
+        initialize()
+        get_policy(args.platform)
+    elif args.command == "validate":
+        initialize()
+        validate_key(args.timeout)
+
+
+if __name__ == "__main__":
+    main()

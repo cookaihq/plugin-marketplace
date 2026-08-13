@@ -1,0 +1,30 @@
+# --- Secrets / credentials (NEVER commit) ---
+.gitHub-token
+.github-token
+*.token
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Maintainer-only build tooling ---
+# Root scripts/ is private except for the public structural validator. Skill-bundled scripts ship.
+/scripts/*
+!/scripts/validate-skills.sh
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- Editor / IDE ---
+.idea/
+*.swp
+.vscode/
