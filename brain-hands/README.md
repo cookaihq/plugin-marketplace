@@ -1,49 +1,49 @@
 # brain-hands
 
-**Keep your smartest model as the brain. Let cheaper models be the hands.**
+**让最聪明的模型当大脑，让便宜的模型当手。**
 
-## The problem
+## 要解决的问题
 
-Top-tier models (Fable, Opus) are the best at understanding requirements, designing solutions and reviewing results - and the most expensive per token, with the tightest subscription quotas. Yet ask one a question and it will happily "get to work": dozens of edit-test-retry loops, burning your scarcest quota on work a cheaper model executes just as well.
+顶级模型（Fable、Opus）最擅长理解需求、设计方案、审查结果——同时也是单位 token 最贵、订阅额度最紧的。但你问它一个问题，它往往直接「开干」：几十轮编辑-测试-重试循环，把你最稀缺的额度烧在便宜模型同样能干好的执行工作上。
 
-Hard blocks (plan mode, permission walls) fix this at the cost of flexibility: sometimes you *do* want the smart model to make an edit.
+硬拦截（plan mode、权限墙）能解决这个问题，但代价是失去灵活性：有些时候你**就是**想让聪明模型直接改一处代码。
 
-## What brain-hands does
+## brain-hands 做什么
 
-brain-hands installs a **role protocol** instead of a wall. When your main session runs a brain-tier model:
+brain-hands 装的不是一堵墙，而是一份**角色协议**。当主会话运行的是 brain 档模型时：
 
-- The model's job is: understand, design, decompose, write an implementation brief, review results.
-- Implementation work (features, multi-file edits, refactors, debug loops) is dispatched to the bundled **`hands` executor subagent**, which runs on a cheaper model (Opus by default). Execution tokens land on the executor's quota, not the brain's.
-- Built-in exceptions keep it flexible: say "do it yourself" and the brain executes directly; trivial one-line edits skip dispatch; if the executor fails twice the brain takes over; for large continuous work it suggests `/model` instead.
+- 它的职责是：理解需求、设计方案、拆分任务、写实施简报、验收结果。
+- 执行类工作（功能实现、多文件修改、重构、调试循环）派给随插件安装的 **`hands` 执行子智能体**，跑在更便宜的模型上（默认 Opus）。执行阶段的 token 落在 executor 的额度上，不动大脑的额度。
+- 内置例外保住灵活性：你说「你直接改」，大脑就亲自执行；一行小改动跳过派发；executor 连续失败两次由大脑接管；大型连续实施则建议你 `/model` 切换。
 
-Even when the model misjudges a question as a task, the failure is cheap: it "gets to work" by writing a brief and dispatching, not by burning brain-tier quota on an edit loop.
+即使模型把一个提问误判成了任务，损失也是便宜的：它「开干」的方式是写简报、派发，而不是拿 brain 档额度去跑编辑循环。
 
-Three mechanisms, all standard Claude Code plugin surface:
+三个机制，全部是 Claude Code plugin 的标准表面：
 
-1. **SessionStart hook** injects the protocol into every session (including after context compaction) - no edits to your `CLAUDE.md`.
-2. **`hands` agent** ships with the plugin, pinned to Opus. Override it by placing a same-name agent in `~/.claude/agents/` (user agents take precedence over plugin agents and survive plugin updates).
-3. **`handoff` skill** carries the brief template and dispatch checklist.
+1. **SessionStart hook** 把协议注入每个会话（包括上下文压缩之后）——不动你的 `CLAUDE.md`。
+2. **`hands` agent** 随插件分发，钉在 Opus。想换模型，在 `~/.claude/agents/` 放同名 agent 覆盖即可（用户级 agent 优先于 plugin agent，且不被插件更新冲掉）。
+3. **`handoff` skill** 携带简报模板和派发清单。
 
-## Install
+## 安装
 
 ```
 /plugin marketplace add cookaihq/plugin-marketplace
 /plugin install brain-hands@plugin-marketplace
 ```
 
-## Updating
+## 更新
 
-Third-party marketplaces like this one do **not** auto-update by default. Two ways to stay current:
+第三方 marketplace（本仓属此类）**默认不自动更新**。两条路：
 
-**Manual** (the default):
+**手动**（默认）：
 
 ```
 /plugin update brain-hands@plugin-marketplace
 ```
 
-New versions load in new sessions; run `/reload-plugins` to activate one in the current session.
+新版本在新会话中加载；当前会话要用新版，跑 `/reload-plugins`。
 
-**Automatic**: in `/plugin` → **Marketplaces** → `plugin-marketplace` → **Enable auto-update**. Teams can instead declare the marketplace in the project's `.claude/settings.json`:
+**自动**：`/plugin` → **Marketplaces** → `plugin-marketplace` → **Enable auto-update**。团队也可以在项目的 `.claude/settings.json` 里声明：
 
 ```json
 {
@@ -56,28 +56,30 @@ New versions load in new sessions; run `/reload-plugins` to activate one in the 
 }
 ```
 
-Auto-update checks shortly after session start; a running session keeps the version it loaded until you `/reload-plugins` or start a new one. Releases are gated by the `version` field in `plugin.json` — a new version number, not a new commit, is what makes an update visible.
+自动更新在会话启动后不久检查一次；正在运行的会话保持启动时加载的版本，直到 `/reload-plugins` 或开新会话。发布以 `plugin.json` 的 `version` 字段为门控——**让用户看到更新的是新版本号，不是新 commit**。
 
-## Configuration
+## 配置
 
-- `BRAIN_HANDS_BRAIN_MODELS` - comma-separated model-name substrings that count as brain-tier. Default: `fable`. Example: `BRAIN_HANDS_BRAIN_MODELS=fable,opus` makes Opus sessions delegate too (to whatever your hands override runs).
-- **Change the executor model**: create `~/.claude/agents/hands.md` with the same `name: hands` and your preferred `model:` - your version wins.
+- `BRAIN_HANDS_BRAIN_MODELS`——逗号分隔的模型名子串，命中即算 brain 档。默认 `fable`。例如 `BRAIN_HANDS_BRAIN_MODELS=fable,opus` 会让 Opus 会话也走派发——**但必须同时把 `hands` 覆盖到更便宜的模型**（见下一条）：用默认的 Opus executor，等于 Opus 给 Opus 写简报，一分不省还倒贴派发开销。
+- **更换 executor 模型**：创建 `~/.claude/agents/hands.md`，`name: hands` 保持同名，`model:` 写你要的模型——用户级定义优先生效。
 
-## Composing with workflow plugins (TDD, BMAD, spec-driven flows)
+## 与工作流类插件组合（TDD、BMAD、spec 驱动流程）
 
-Workflow skills define the *process*; brain-hands decides *who executes it*. Three cases:
+工作流类 skill 定义**过程**；brain-hands 决定**谁来执行**。三种情况：
 
-| Skill type | Examples | What happens |
+| skill 类型 | 例子 | 实际行为 |
 |---|---|---|
-| Thinking-stage | domain modeling, codebase design, research, grilling, BMAD analyst/PM/architect | The brain runs them itself - that is what you pay it for. |
-| Execution-loop | TDD red-green loops, prototype builds, BMAD dev/QA | Packaged as **one brief**; the hands agent loads the skill and runs the whole loop in its own session. Never dispatched step by step. |
-| Skills that spawn subagents | parallel review skills | The protocol requires every execution/review subagent to get an explicit `model` parameter - unspecified models inherit the parent (your brain-tier model) and leak quota. Fork-type subagents are banned for such work. |
+| 思考类 | 领域建模、代码库设计、调研、grilling、BMAD 的 analyst/PM/architect | 大脑亲自跑——这正是你花钱买它的地方。 |
+| 执行循环类 | TDD 红绿循环、原型搭建、BMAD 的 dev/QA | 打包成**一份简报**派出；hands 在自己的会话里加载该 skill、跑完整个循环。绝不逐步派发。 |
+| 自派子智能体类 | 并行审查类 skill | 协议要求每个执行/审查类子智能体都显式传 `model` 参数——不指定就继承父模型（你的 brain 档模型），额度直接漏掉。此类工作禁用 fork 型子智能体。 |
 
-## Manual install (no plugin)
+## 手动安装（不用 plugin）
 
-Prefer zero dependencies? Copy the protocol from [`scripts/inject-protocol.sh`](scripts/inject-protocol.sh) (the `CTX` text) into your `~/.claude/CLAUDE.md`, and create an executor agent in `~/.claude/agents/`. You lose automatic updates and the survives-compaction re-injection.
+想要零依赖？把 [`scripts/inject-protocol.sh`](scripts/inject-protocol.sh) 里的协议文本（`CTX` 变量）复制进你的 `~/.claude/CLAUDE.md`，再在 `~/.claude/agents/` 建一个 executor agent。代价是失去自动更新和压缩后重注入。
 
-## Honest limits
+## 边界，如实说
 
-- This is a prompt-layer protocol, not an enforcement mechanism. The brain model follows it with high - not perfect - reliability. The prohibition-plus-named-alternative phrasing ("must not execute; dispatch to hands") is deliberately chosen over process rules ("confirm before acting"), which models follow far less consistently.
-- Claude Code only. The mechanisms used (plugin hooks, subagent model override) have no equivalent in other agent CLIs.
+- 这是提示词层协议，不是强制机制。大脑模型以高——但非完美——的可靠性遵守它。措辞刻意选了「禁令 + 指名替代通道」（不得执行，派给 hands），而不是流程性要求（先确认再动手）——后者模型遵守得差得多。
+- 仅支持 Claude Code。所用机制（plugin hooks、子智能体模型覆盖）在其他 agent CLI 中没有对应物。
+- **省什么，省不了什么。** brain-hands 降低 brain 档额度的燃烧速率、延后撞到 brain 档专属上限。但它绕不开**跨模型共享**的订阅用量窗口（session / weekly 限额）：共享窗口耗尽后，切模型、派子智能体都无法恢复访问。撞到限额时 Claude Code 报错阻塞，不会静默降级——所以不存在「会话悄悄换了模型、协议还以为自己是大脑」的脏状态。在非 brain 档会话里，协议直接休眠：会话表现与未安装无异，`hands` agent 和 `handoff` skill 保留，可显式调用。
+- **同模型派发陷阱。** 加进 `BRAIN_HANDS_BRAIN_MODELS` 的每个模型都必须比 executor 贵，否则派发是纯开销。`fable,opus` 配默认的 Opus `hands`，等于 Opus 给 Opus 写简报——额度一分不省，冷启动和写简报的成本照付。扩 brain 名单和覆盖 executor 模型（`~/.claude/agents/hands.md`）永远成对操作。
