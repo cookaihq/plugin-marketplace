@@ -83,3 +83,7 @@ brain-hands 装的不是一堵墙，而是一份**角色协议**。当主会话�
 - 仅支持 Claude Code。所用机制（plugin hooks、子智能体模型覆盖）在其他 agent CLI 中没有对应物。
 - **省什么，省不了什么。** brain-hands 降低 brain 档额度的燃烧速率、延后撞到 brain 档专属上限。但它绕不开**跨模型共享**的订阅用量窗口（session / weekly 限额）：共享窗口耗尽后，切模型、派子智能体都无法恢复访问。撞到限额时 Claude Code 报错阻塞，不会静默降级——所以不存在「会话悄悄换了模型、协议还以为自己是大脑」的脏状态。在非 brain 档会话里，协议直接休眠：会话表现与未安装无异，`hands` agent 和 `handoff` skill 保留，可显式调用。
 - **同模型派发陷阱。** 加进 `BRAIN_HANDS_BRAIN_MODELS` 的每个模型都必须比 executor 贵，否则派发是纯开销。`fable,opus` 配默认的 Opus `hands`，等于 Opus 给 Opus 写简报——额度一分不省，冷启动和写简报的成本照付。扩 brain 名单和覆盖 executor 模型（`~/.claude/agents/hands.md`）永远成对操作。
+
+## 许可证
+
+MIT — 见 [LICENSE](LICENSE)。
