@@ -147,6 +147,7 @@ done
 
 # 4. Legacy skill identifiers and the old dotenv path are absent from active documentation and skills.
 python3 - <<'PY' 2>/dev/null
+import os
 import pathlib
 import re
 
@@ -160,11 +161,13 @@ legacy_task_references = (
     'bulk-data-export', 'comments-analysis', 'competitor-analysis', 'creator-analytics',
     'hashtag-research', 'social-listening', 'social-media-downloader', 'trend-research',
 )
-roots = [pathlib.Path('README.md'), pathlib.Path('CONTRIBUTING.md'), pathlib.Path('CHANGELOG.md')]
+roots = [pathlib.Path('README.md'), pathlib.Path('CHANGELOG.md')]
 roots.extend(pathlib.Path('skills').glob('*/SKILL.md'))
 roots.extend(pathlib.Path('.claude-plugin').glob('*.json'))
 roots.extend(pathlib.Path('.codex-plugin').glob('*.json'))
-roots.extend(pathlib.Path('.agents').rglob('*.json'))
+# Both marketplace manifests live at the marketplace root, one level up.
+roots.append(pathlib.Path(os.environ['CLAUDE_MARKETPLACE']))
+roots.append(pathlib.Path(os.environ['CODEX_MARKETPLACE']))
 
 for path in roots:
     text = path.read_text()
@@ -227,11 +230,11 @@ fi
 #    reads ignored credentials, local environments, caches, or maintainer-only root scripts.
 product_files=(
   README.md
-  CONTRIBUTING.md
   CHANGELOG.md
   .claude-plugin/*.json
   .codex-plugin/*.json
-  .agents/plugins/*.json
+  "$CLAUDE_MARKETPLACE"
+  "$CODEX_MARKETPLACE"
   skills/*/SKILL.md
   skills/*/scripts/*
   skills/*/references/*

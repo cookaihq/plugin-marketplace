@@ -200,7 +200,7 @@ You: What's trending on TikTok in the US right now?
 
 - Website <https://tikin.net> · Console <https://console.tikin.net> ·
   GitHub <https://github.com/cookaihq/plugin-marketplace/tree/main/tikin-plugin>
-- [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 
