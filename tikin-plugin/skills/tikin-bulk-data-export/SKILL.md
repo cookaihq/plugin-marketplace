@@ -1,6 +1,7 @@
 ---
 name: tikin-bulk-data-export
-description: Fetch large social-media lists via tikin (posts, followers, search results, comments) with safe pagination, dedup, and CSV or JSON export. Use when the user wants all posts, a dataset, an export, or any large repeated pull from a supported platform or URL.
+version: 0.2.0
+description: v0.2.0｜Fetch large social-media lists via tikin (posts, followers, search results, comments) with safe pagination, dedup, and CSV or JSON export. Use when the user wants all posts, a dataset, an export, or any large repeated pull from a supported platform or URL.
 ---
 
 # Bulk Data Export

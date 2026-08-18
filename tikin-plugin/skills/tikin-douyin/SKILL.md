@@ -1,6 +1,7 @@
 ---
 name: tikin-douyin
-description: Work with Douyin (抖音) URLs and data via tikin — fetch videos, user profiles and post lists, video comments, and run video/user/general search via Douyin's dedicated search series. Use when the user provides a Douyin URL or the task targets Douyin. Covers App-V3 and the Douyin Search series.
+version: 0.2.0
+description: v0.2.0｜Work with Douyin (抖音) URLs and data via tikin — fetch videos, user profiles and post lists, video comments, and run video/user/general search via Douyin's dedicated search series. Use when the user provides a Douyin URL or the task targets Douyin. Covers App-V3 and the Douyin Search series.
 ---
 
 # Douyin / 抖音 (via tikin)

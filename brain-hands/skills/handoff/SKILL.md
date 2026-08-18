@@ -1,6 +1,7 @@
 ---
 name: handoff
-description: Write an implementation brief and dispatch it to the hands executor subagent. Use when the main session runs a brain-tier model and a designed change is ready to be implemented, or when the user says "handoff", "dispatch", "ship it to the executor".
+version: 0.1.3
+description: v0.1.3｜Write an implementation brief and dispatch it to the hands executor subagent. Use when the main session runs a brain-tier model and a designed change is ready to be implemented, or when the user says "handoff", "dispatch", "ship it to the executor".
 ---
 
 # Handoff: brief + dispatch

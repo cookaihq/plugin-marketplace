@@ -1,6 +1,7 @@
 ---
 name: tikin-hashtag-research
-description: Research a hashtag or keyword via tikin — popularity signals, top and recent content, and related hashtags across supported platforms. Use when the user asks about a hashtag, related tags, content ideas, or supplies a supported hashtag URL.
+version: 0.2.0
+description: v0.2.0｜Research a hashtag or keyword via tikin — popularity signals, top and recent content, and related hashtags across supported platforms. Use when the user asks about a hashtag, related tags, content ideas, or supplies a supported hashtag URL.
 ---
 
 # Hashtag Research

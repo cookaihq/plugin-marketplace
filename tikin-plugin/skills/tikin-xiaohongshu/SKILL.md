@@ -1,6 +1,7 @@
 ---
 name: tikin-xiaohongshu
-description: Work with Xiaohongshu / RedNote (小红书) URLs and data via tikin — fetch image and video note details, user info and posted notes, search notes/users/products/images, and pull note comments and sub-comments. Use when the user provides a Xiaohongshu URL/share text or the task targets Xiaohongshu. Covers the Xiaohongshu App-V2 API.
+version: 0.2.0
+description: v0.2.0｜Work with Xiaohongshu / RedNote (小红书) URLs and data via tikin — fetch image and video note details, user info and posted notes, search notes/users/products/images, and pull note comments and sub-comments. Use when the user provides a Xiaohongshu URL/share text or the task targets Xiaohongshu. Covers the Xiaohongshu App-V2 API.
 ---
 
 # Xiaohongshu / RedNote / 小红书 (via tikin)

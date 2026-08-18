@@ -1,6 +1,7 @@
 ---
 name: tikin-comments-analysis
-description: Pull and analyze comments from a supported post or video URL via tikin — sentiment breakdown, recurring themes, top comments, and notable questions or complaints. Use when the user asks to analyze comments, summarize discussion, or provides a social-media post URL.
+version: 0.2.0
+description: v0.2.0｜Pull and analyze comments from a supported post or video URL via tikin — sentiment breakdown, recurring themes, top comments, and notable questions or complaints. Use when the user asks to analyze comments, summarize discussion, or provides a social-media post URL.
 ---
 
 # Comments Analysis

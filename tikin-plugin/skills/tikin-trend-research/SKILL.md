@@ -1,6 +1,7 @@
 ---
 name: tikin-trend-research
-description: Discover trends via tikin — viral content, rising hashtags, hot sounds, and ranking boards across supported platforms. Use when the user asks what is trending, wants a regional or niche trend report, or provides a supported URL as trend context.
+version: 0.2.0
+description: v0.2.0｜Discover trends via tikin — viral content, rising hashtags, hot sounds, and ranking boards across supported platforms. Use when the user asks what is trending, wants a regional or niche trend report, or provides a supported URL as trend context.
 ---
 
 # Trend Research

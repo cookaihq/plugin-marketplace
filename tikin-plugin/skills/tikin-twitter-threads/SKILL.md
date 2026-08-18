@@ -1,6 +1,7 @@
 ---
 name: tikin-twitter-threads
-description: Work with Twitter/X and Threads URLs and data via tikin — fetch tweet/post detail, user profiles, user timelines, followers/following, search timelines, comments/replies, and X trending topics. Use when the user provides an X/Twitter/Threads URL or the task targets either platform. Covers the Twitter-Web and Threads-Web APIs.
+version: 0.2.0
+description: v0.2.0｜Work with Twitter/X and Threads URLs and data via tikin — fetch tweet/post detail, user profiles, user timelines, followers/following, search timelines, comments/replies, and X trending topics. Use when the user provides an X/Twitter/Threads URL or the task targets either platform. Covers the Twitter-Web and Threads-Web APIs.
 ---
 
 # Twitter / X & Threads (via tikin)
