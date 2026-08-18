@@ -1,18 +1,123 @@
 #!/usr/bin/env python3
+# --- runtime bootstrap (ADR 0007) -------------------------------------------
+# Runs before anything else so the process always ends up on this skill's own
+# pinned interpreter, no matter how the caller launched the script. Python 3.9
+# compatible syntax only: the system interpreter may execute this part.
+import os
+import shlex
+import subprocess
+import sys
+
+REEXEC_ENV = "TIKIN_SETUP_BOOTSTRAP_REEXEC"
+
+# scripts/tikin-config -> skills/tikin-setup/
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# A relative UV_PROJECT_ENVIRONMENT resolves against the project root, the way uv
+# resolves it. An absolute value is returned unchanged by os.path.join.
+VENV_DIR = os.path.join(SKILL_DIR, os.environ.get("UV_PROJECT_ENVIRONMENT") or ".venv")
+VENV_PY = os.path.join(VENV_DIR, "bin", "python")
+
+
+def _bootstrap_fail(message):
+    sys.stderr.write(message + "\n")
+    raise SystemExit(1)
+
+
+def _bootstrap_manual_hint():
+    return "rm -rf %s && uv sync --no-dev --project %s" % (
+        shlex.quote(VENV_DIR),
+        shlex.quote(SKILL_DIR),
+    )
+
+
+def _bootstrap_venv_is_valid():
+    # bin/python alone is not enough: an interrupted sync, a same-named directory
+    # or a stale symlink all leave an interpreter behind without a real venv.
+    return os.path.exists(VENV_PY) and os.path.exists(
+        os.path.join(VENV_DIR, "pyvenv.cfg")
+    )
+
+
+_BOOTSTRAP_TARGET = os.path.realpath(VENV_DIR)
+
+if os.path.realpath(sys.prefix) == _BOOTSTRAP_TARGET:
+    if os.environ.get(REEXEC_ENV) == _BOOTSTRAP_TARGET:
+        os.environ.pop(REEXEC_ENV, None)
+else:
+    if os.environ.get(REEXEC_ENV) == _BOOTSTRAP_TARGET:
+        _bootstrap_fail(
+            "tikin-setup runtime is broken: restarted into %s but the interpreter is "
+            "still outside that venv.\nRebuild it manually: %s"
+            % (VENV_DIR, _bootstrap_manual_hint())
+        )
+    if not _bootstrap_venv_is_valid():
+        try:
+            _probe = subprocess.run(
+                ["uv", "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            _bootstrap_fail(
+                "uv is not installed. Run: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            )
+        _parts = _probe.stdout.decode("utf-8", "replace").split()  # "uv 0.8.11 (...)"
+        _found = _parts[1] if len(_parts) > 1 else "0"
+        try:
+            _numeric = tuple(int(x) for x in (_found.split(".") + ["0", "0"])[:2])
+        except ValueError:
+            _numeric = (0, 0)  # uv error output is "error: ...", not a version
+        if _numeric < (0, 8):
+            _bootstrap_fail(
+                "uv is too old (need >= 0.8, found %s). Run: uv self update" % _found
+            )
+        sys.stderr.write(
+            "[bootstrap] runtime missing, rebuilding %s from uv.lock ...\n" % VENV_DIR
+        )
+        try:
+            _sync = subprocess.run(
+                # --no-dev: the runtime only ever needs the shipping deps; dev
+                # extras must not be pulled onto a user machine at first run.
+                ["uv", "sync", "--no-dev", "--project", SKILL_DIR],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=600,  # every network call needs a budget (ADR 0006)
+            )
+        except subprocess.TimeoutExpired:
+            _bootstrap_fail(
+                "uv sync did not finish within 600s, the network is likely down. "
+                "Run manually: " + _bootstrap_manual_hint()
+            )
+        if _sync.returncode != 0 or not _bootstrap_venv_is_valid():
+            _bootstrap_fail(
+                "uv sync failed, the runtime could not be rebuilt (run manually: %s):\n%s"
+                % (
+                    _bootstrap_manual_hint(),
+                    _sync.stdout.decode("utf-8", "replace"),
+                )
+            )
+    os.environ[REEXEC_ENV] = _BOOTSTRAP_TARGET
+    os.execv(VENV_PY, [VENV_PY] + sys.argv)
+# --- end runtime bootstrap ---------------------------------------------------
+
 import argparse
 import getpass
 import json
-import os
 from pathlib import Path
 import re
-import shlex
-import sys
 import tempfile
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
 DEFAULT_SETTINGS = {"routing": {"default": "auto", "platforms": {}}}
+# Transient-failure policy (ADR 0006 / the Reliability section of tikin-rest-api):
+# 3 attempts in total, waiting 1s then 2s. 429 with Retry-After wins over the backoff.
+VALIDATE_MAX_ATTEMPTS = 3
+VALIDATE_BACKOFF_SECONDS = (1.0, 2.0)
+VALIDATE_RETRY_AFTER_CAP_SECONDS = 60.0
 ENV_ASSIGNMENT = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 MODES = ("auto", "confirm")
 PLATFORMS = (
@@ -194,6 +299,53 @@ def get_policy(platform):
     print(routing["platforms"].get(platform, routing["default"]))
 
 
+def retry_after_seconds(error):
+    """Seconds requested by a 429's Retry-After header, or None to use the backoff."""
+    headers = getattr(error, "headers", None)
+    raw = headers.get("Retry-After") if headers else None
+    if not raw:
+        return None
+    try:
+        seconds = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None  # HTTP-date form: fall back to the fixed backoff schedule
+    if seconds < 0:
+        return None
+    return min(seconds, VALIDATE_RETRY_AFTER_CAP_SECONDS)
+
+
+def log_validation_retry(attempt, reason, delay):
+    # Only the failure class is logged. The key is never part of this message.
+    sys.stderr.write(
+        "key validation attempt %d/%d failed (%s); retrying in %.0fs\n"
+        % (attempt, VALIDATE_MAX_ATTEMPTS, reason, delay)
+    )
+
+
+def validate_once(request, timeout):
+    """Run one validation call.
+
+    Returns (outcome, detail, retry_after) where outcome is "ok", "fatal" (a
+    deterministic failure that must not be retried) or "transient".
+    """
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            if 200 <= response.status < 300:
+                return ("ok", None, None)
+        return ("fatal", "key validation returned an unexpected response", None)
+    except HTTPError as error:
+        if error.code in (401, 403):
+            return ("fatal", "invalid TIKIN_API_KEY", None)
+        if error.code == 429 or error.code >= 500:
+            return ("transient", f"HTTP {error.code}", retry_after_seconds(error))
+        return ("fatal", f"key validation failed with HTTP {error.code}", None)
+    except URLError as error:
+        return ("transient", f"connection failed: {error.reason}", None)
+    except (TimeoutError, OSError) as error:
+        # socket.timeout, connection resets and other transport-level faults.
+        return ("transient", f"connection failed: {error}", None)
+
+
 def validate_key(timeout):
     file_values = parse_env_file(config_dir() / ".env")
     key = os.environ.get("TIKIN_API_KEY") or file_values.get("TIKIN_API_KEY")
@@ -208,18 +360,27 @@ def validate_key(timeout):
         f"{base_url.rstrip('/')}/api/usage/token/",
         headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            if 200 <= response.status < 300:
-                print("valid")
-                return
-    except HTTPError as error:
-        if error.code in (401, 403):
-            raise SystemExit("invalid TIKIN_API_KEY") from None
-        raise SystemExit(f"key validation failed with HTTP {error.code}") from None
-    except (URLError, TimeoutError):
-        raise SystemExit("key validation could not reach tikin") from None
-    raise SystemExit("key validation returned an unexpected response")
+    reason = "unknown error"
+    for attempt in range(1, VALIDATE_MAX_ATTEMPTS + 1):
+        outcome, detail, retry_after = validate_once(request, timeout)
+        if outcome == "ok":
+            print("valid")
+            return
+        if outcome == "fatal":
+            raise SystemExit(detail) from None
+        reason = detail
+        if attempt == VALIDATE_MAX_ATTEMPTS:
+            break
+        delay = (
+            retry_after
+            if retry_after is not None
+            else VALIDATE_BACKOFF_SECONDS[attempt - 1]
+        )
+        log_validation_retry(attempt, reason, delay)
+        time.sleep(delay)
+    raise SystemExit(
+        f"key validation could not reach tikin after {VALIDATE_MAX_ATTEMPTS} attempts ({reason})"
+    ) from None
 
 
 def main():
@@ -235,7 +396,12 @@ def main():
     get_policy_parser = subparsers.add_parser("get-policy")
     get_policy_parser.add_argument("platform", choices=PLATFORMS)
     validate_parser = subparsers.add_parser("validate")
-    validate_parser.add_argument("--timeout", type=float, default=10.0)
+    # 30s matches the `--max-time 30` that the Reliability section of
+    # tikin-rest-api mandates for every JSON call against $BASE. Validation is
+    # exactly such a call, so it must not time out earlier than the documented
+    # budget — a 10s cap turned slow-but-healthy responses into "transient
+    # failure" retries.
+    validate_parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
 
     if args.command == "init":

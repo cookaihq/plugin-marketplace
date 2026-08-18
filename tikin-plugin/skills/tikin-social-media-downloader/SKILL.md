@@ -1,7 +1,7 @@
 ---
 name: tikin-social-media-downloader
-version: 0.2.0
-description: v0.2.0｜Download video, audio, or images (no-watermark where available) from a social-media URL or list of URLs. Use when the user pastes a TikTok/Douyin/Instagram/YouTube/Twitter/Xiaohongshu link and wants the media file, or says "download this video", "save without watermark", "grab the audio". Dispatches to the right per-platform tikin endpoint.
+version: 0.2.1
+description: v0.2.1｜Download video, audio, or images (no-watermark where available) from a social-media URL or list of URLs. Use when the user pastes a TikTok/Douyin/Instagram/YouTube/Twitter/Xiaohongshu link and wants the media file, or says "download this video", "save without watermark", "grab the audio". Dispatches to the right per-platform tikin endpoint.
 ---
 
 # Social Media Downloader
@@ -59,15 +59,21 @@ id. For the others, pull the id/code from the URL (or resolve it via the platfor
 ## Step 2 — Call the endpoint
 
 ```bash
-# TikTok by share URL (simplest — pass the URL straight through)
+# TikTok by share URL (simplest — pass the URL straight through).
+# curl's own --data-urlencode does the escaping; -G turns the encoded pairs into the query string,
+# so no helper interpreter is involved.
 URL="https://www.tiktok.com/@nasa/video/7650608519288245534"
-curl -s "$BASE/api/v1/tiktok/app/v3/fetch_one_video_by_share_url?share_url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$URL")" \
+curl -s --max-time 30 -G "$BASE/api/v1/tiktok/app/v3/fetch_one_video_by_share_url" \
+  --data-urlencode "share_url=$URL" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -o /tmp/media.json
 
 # YouTube streams
-curl -s "$BASE/api/v1/youtube/web_v2/get_video_streams_v2?video_id=dQw4w9WgXcQ" \
+curl -s --max-time 30 "$BASE/api/v1/youtube/web_v2/get_video_streams_v2?video_id=dQw4w9WgXcQ" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -o /tmp/media.json
 ```
+
+Timeouts, which failures to retry (and which never to): follow the **Reliability** section in
+`tikin-rest-api`.
 
 ## Step 3 — Extract the media URL, then download
 
@@ -77,14 +83,26 @@ do not introduce a `jq` dependency unless it is already available and the user p
 save the returned media URL:
 
 ```bash
-curl -L "<media_url_from_response>" -o video.mp4
+curl -L --max-time 300 "<media_url_from_response>" -o video.mp4
 file video.mp4   # confirm it's a real media container
 ```
+
+`--max-time 300` is the media-download limit from `tikin-rest-api`'s **Reliability** section. For a
+file known to be much larger, raise the value explicitly and say so — never drop the flag.
 
 ## Batch downloads
 
 Loop over a URL list, **one at a time with a small delay** (respect QPS 10/sec). Each parse is one
 billed call — warn the user for large batches and hand off to `tikin-bulk-data-export` for big jobs.
+
+**Budget the batch.** The user's list length is the budget when they gave one. **With no stated
+target, stop after 50 URLs in a single run.** On hitting the cap, stop and report it as
+`budget exhausted`: how many URLs were downloaded, how many failed, and exactly which URLs are
+still unprocessed, so the user can approve a follow-up run. Never trim the list silently.
+
+Transient errors (429/5xx/timeouts) and the retry budget: follow the **Reliability** section in
+`tikin-rest-api`. A URL that fails all 3 attempts is reported as failed for that entry — keep going
+through the rest of the batch rather than aborting the whole run.
 
 ## Verification gate
 

@@ -1,7 +1,7 @@
 ---
 name: tikin-instagram
-version: 0.2.0
-description: v0.2.0｜Work with Instagram URLs and data via tikin — fetch user info and posts, search users/reels/hashtags/music/locations, pull post comments and replies, and hashtag feeds. Use when the user provides an Instagram URL or the task targets Instagram. Covers the Instagram V2 API.
+version: 0.2.1
+description: v0.2.1｜Work with Instagram URLs and data via tikin — fetch user info and posts, search users/reels/hashtags/music/locations, pull post comments and replies, and hashtag feeds. Use when the user provides an Instagram URL or the task targets Instagram. Covers the Instagram V2 API.
 ---
 
 # Instagram (via tikin)
@@ -63,14 +63,24 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
-curl -s "$BASE/api/v1/instagram/v2/fetch_user_posts?username=instagram" \
+curl -s --max-time 30 "$BASE/api/v1/instagram/v2/fetch_user_posts?username=instagram" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
 ## Pagination
 
 Everything uses `pagination_token` — pass the token returned by the previous response; stop when
-none is returned. **Each page is billed — cap it.**
+none is returned.
+
+**Each page is billed — every loop needs a budget.** With a user target, that target is the budget;
+with no target, stop at the default 50 pages / 5,000 items from `tikin-rest-api`'s **Reliability**
+section. When the budget ends the loop, report it as `budget exhausted` — pages and items fetched,
+whether more remains, and the token to resume from — instead of presenting a partial pull as
+complete.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Hand off to task skills
 

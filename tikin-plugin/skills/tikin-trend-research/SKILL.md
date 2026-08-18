@@ -1,7 +1,7 @@
 ---
 name: tikin-trend-research
-version: 0.2.0
-description: v0.2.0｜Discover trends via tikin — viral content, rising hashtags, hot sounds, and ranking boards across supported platforms. Use when the user asks what is trending, wants a regional or niche trend report, or provides a supported URL as trend context.
+version: 0.2.1
+description: v0.2.1｜Discover trends via tikin — viral content, rising hashtags, hot sounds, and ranking boards across supported platforms. Use when the user asks what is trending, wants a regional or niche trend report, or provides a supported URL as trend context.
 ---
 
 # Trend Research
@@ -62,12 +62,25 @@ platforms' trend sources, use the `tikin-endpoint-discovery` skill
 ## Cost awareness
 
 Each board is 1 call. A multi-platform report is a handful of calls — cheap. Drilling into many
-hashtags/posts multiplies calls; warn before deep dives.
+hashtags/posts multiplies calls; warn before deep dives. Every call carries `--max-time 30` (see
+the **Reliability** section in `tikin-rest-api`).
+
+**Budget the drill-downs.** The trend boards themselves are one call each and need no budget. Once
+you start pulling content under a trend, the user's target is the budget; with no target, stop
+after **5 drill-downs of 2 pages each**, inside the overall 50-page / 5,000-item default from
+`tikin-rest-api`'s **Reliability** section. When the budget ends the run, report it as
+`budget exhausted` and name the trends that were not drilled into.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried. A board that fails all 3 attempts is reported as unavailable for that platform; the rest
+of the report still runs.
 
 ## Verification gate
 
-1. Each board returns a non-empty ranked list.
+1. Each board returns a non-empty ranked list, or is explicitly marked unavailable.
 2. Region/period filters were actually applied (echo them in the report).
+3. Any trend left un-drilled because of the budget is named.
 
 ## Red flags
 

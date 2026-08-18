@@ -1,7 +1,7 @@
 ---
 name: tikin-twitter-threads
-version: 0.2.0
-description: v0.2.0｜Work with Twitter/X and Threads URLs and data via tikin — fetch tweet/post detail, user profiles, user timelines, followers/following, search timelines, comments/replies, and X trending topics. Use when the user provides an X/Twitter/Threads URL or the task targets either platform. Covers the Twitter-Web and Threads-Web APIs.
+version: 0.2.1
+description: v0.2.1｜Work with Twitter/X and Threads URLs and data via tikin — fetch tweet/post detail, user profiles, user timelines, followers/following, search timelines, comments/replies, and X trending topics. Use when the user provides an X/Twitter/Threads URL or the task targets either platform. Covers the Twitter-Web and Threads-Web APIs.
 ---
 
 # Twitter / X & Threads (via tikin)
@@ -69,14 +69,24 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
-curl -s "$BASE/api/v1/twitter/web/fetch_search_timeline?keyword=ai&search_type=Top" \
+curl -s --max-time 30 "$BASE/api/v1/twitter/web/fetch_search_timeline?keyword=ai&search_type=Top" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
 ## Pagination
 
 Twitter/X uses `cursor`; Threads uses `end_cursor`. Pass the value returned by the previous
-response; stop when none is returned. **Each page is billed — cap it.**
+response; stop when none is returned.
+
+**Each page is billed — every loop needs a budget.** With a user target, that target is the budget;
+with no target, stop at the default 50 pages / 5,000 items from `tikin-rest-api`'s **Reliability**
+section. When the budget ends the loop, report it as `budget exhausted` — pages and items fetched,
+whether more remains, and the cursor to resume from — instead of presenting a partial pull as
+complete.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Hand off to task skills
 

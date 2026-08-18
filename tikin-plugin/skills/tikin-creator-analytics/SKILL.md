@@ -1,7 +1,7 @@
 ---
 name: tikin-creator-analytics
-version: 0.2.0
-description: v0.2.0｜Analyze a creator or account via tikin — profile stats, recent post performance, engagement rate, posting cadence, and top content. Use when the user asks for creator performance or provides a supported profile/channel URL or handle.
+version: 0.2.1
+description: v0.2.1｜Analyze a creator or account via tikin — profile stats, recent post performance, engagement rate, posting cadence, and top content. Use when the user asks for creator performance or provides a supported profile/channel URL or handle.
 ---
 
 # Creator Analytics
@@ -48,7 +48,7 @@ limitation and ask before selecting an alternative; do not silently fetch the or
    platform skill for the exact endpoint.
 3. **Fetch the profile** (followers, following, total likes/posts, bio) — the user-info endpoint.
 4. **Fetch recent posts** (e.g. last 30–100) via the user's post-list endpoint, paginating with
-   the platform's cursor. **Cap the page count** and tell the user the cost.
+   the platform's cursor under the page budget below, and tell the user the cost.
 5. **Compute metrics** from the posts:
    - Engagement rate ≈ avg(likes + comments + shares) / followers.
    - Posting cadence (posts/week from timestamps).
@@ -70,14 +70,25 @@ Profile = 1 call; each page of posts = 1 call. Estimate before running (1 + page
 user before pulling many pages. Check balance/usage anytime:
 
 ```bash
-curl -s "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
+curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
+
+**Budget the post-list loop.** With a user target post count, that target is the budget; with no
+target, stop at **10 pages** — well inside the 50-page / 5,000-item default from `tikin-rest-api`'s
+**Reliability** section, and enough for the 30–100 recent posts this report needs. When the budget
+ends the loop, report it as `budget exhausted` (posts and pages fetched, whether more remain) and
+say that the metrics describe that sample only.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Verification gate
 
 1. Profile resolved (non-empty follower/post counts).
 2. Post list non-empty and timestamps parse.
 3. Engagement math sanity-checked (rates between 0–100%).
+4. Sample size stated, including whether the budget rather than the account ended the pull.
 
 ## Red flags
 

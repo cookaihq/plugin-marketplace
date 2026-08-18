@@ -2,6 +2,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -11,9 +12,66 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "skills" / "tikin-setup" / "scripts" / "tikin-config"
+SKILL_DIR = ROOT / "skills" / "tikin-setup"
+SCRIPT = SKILL_DIR / "scripts" / "tikin-config"
+VENV_DIR = SKILL_DIR / ".venv"
+VENV_PY = VENV_DIR / "bin" / "python"
+
+BUILD_HINT = f"uv sync --no-dev --project {SKILL_DIR}"
 
 
+def _venv_is_valid():
+    # Mirrors the bootstrap check inside tikin-config: bin/python alone is not
+    # enough, an interrupted sync leaves an interpreter without a real venv.
+    return VENV_PY.exists() and (VENV_DIR / "pyvenv.cfg").exists()
+
+
+def _resolve_interpreter():
+    """Pick the interpreter the tests launch tikin-config with.
+
+    Never `sys.executable`: that is whatever ran the test runner, so the script's
+    own bootstrap would fire, shell out to `uv`, and on a cold checkout do a
+    network `uv sync` in the middle of the test — turning an offline unit test
+    into an online one, and failing outright on a machine without uv.
+
+    Order: use the already-built .venv; else build it once if uv is present;
+    else skip with the exact command to run.
+    """
+    if _venv_is_valid():
+        return str(VENV_PY), None
+
+    if shutil.which("uv") is None:
+        return None, (
+            f"tikin-setup runtime not built and uv is not installed.\n"
+            f"Install uv (https://docs.astral.sh/uv/) then run: {BUILD_HINT}"
+        )
+
+    # First build needs network; every later run is offline.
+    result = subprocess.run(
+        ["uv", "sync", "--no-dev", "--project", str(SKILL_DIR)],
+        capture_output=True,
+        text=True,
+        timeout=600,  # every network call needs a budget (ADR 0006)
+    )
+    if result.returncode != 0 or not _venv_is_valid():
+        return None, (
+            f"could not build the tikin-setup runtime (run manually: {BUILD_HINT}):\n"
+            f"{result.stdout}{result.stderr}"
+        )
+    return str(VENV_PY), None
+
+
+INTERPRETER, SKIP_REASON = _resolve_interpreter()
+
+if SKIP_REASON:
+    # unittest only shows a skip reason at -v, so the default run would print a
+    # row of "s" and no way to act on it. Say it once on stderr instead.
+    sys.stderr.write(
+        "\n[tests] SKIPPING TikinConfigTests -- " + SKIP_REASON + "\n\n"
+    )
+
+
+@unittest.skipIf(INTERPRETER is None, SKIP_REASON or "tikin-setup runtime unavailable")
 class TikinConfigTests(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -26,7 +84,7 @@ class TikinConfigTests(unittest.TestCase):
 
     def run_config(self, *args, input_text=None, env=None, check=True):
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), *args],
+            [INTERPRETER, str(SCRIPT), *args],
             input=input_text,
             text=True,
             capture_output=True,
@@ -210,6 +268,45 @@ class TikinConfigTests(unittest.TestCase):
         self.assertNotIn("outside-secret", result.stdout)
         self.assertNotIn("outside-secret", result.stderr)
 
+    def start_stub_tikin(self, responder):
+        """Serve /api/usage/token/ locally. No request ever leaves the machine.
+
+        `responder` receives the 1-based request number and returns
+        (status, extra_headers, body_bytes).
+        """
+        calls = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                calls.append(self.path)
+                status, extra_headers, body = responder(len(calls))
+                self.send_response(status)
+                for name, value in (extra_headers or {}).items():
+                    self.send_header(name, value)
+                if body:
+                    self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server, calls
+
+    def write_env_pointing_at(self, server, secret):
+        config_dir = self.xdg_home / "tikin"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / ".env").write_text(
+            f"TIKIN_API_KEY={secret}\n"
+            f"TIKIN_BASE_URL=http://127.0.0.1:{server.server_port}\n"
+        )
+
     def test_validate_checks_the_key_without_echoing_it(self):
         secret = "validation-secret"
 
@@ -248,6 +345,105 @@ class TikinConfigTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "valid")
         self.assertNotIn(secret, result.stdout)
         self.assertNotIn(secret, result.stderr)
+
+    def test_validate_retries_a_transient_server_error_then_succeeds(self):
+        secret = "transient-secret"
+
+        def responder(call_number):
+            if call_number == 1:
+                return (503, None, None)
+            return (200, None, b'{"ok":true}')
+
+        server, calls = self.start_stub_tikin(responder)
+        self.write_env_pointing_at(server, secret)
+
+        result = self.run_config("validate")
+
+        self.assertEqual(result.stdout.strip(), "valid")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("attempt 1/3", result.stderr)
+        self.assertIn("HTTP 503", result.stderr)
+        self.assertNotIn(secret, result.stdout)
+        self.assertNotIn(secret, result.stderr)
+
+    def test_validate_honors_retry_after_and_stops_after_three_attempts(self):
+        secret = "rate-limited-secret"
+
+        def responder(_call_number):
+            return (429, {"Retry-After": "0"}, None)
+
+        server, calls = self.start_stub_tikin(responder)
+        self.write_env_pointing_at(server, secret)
+
+        result = self.run_config("validate", check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 3)
+        self.assertIn("attempt 1/3", result.stderr)
+        self.assertIn("attempt 2/3", result.stderr)
+        self.assertIn("retrying in 0s", result.stderr)
+        self.assertIn("after 3 attempts", result.stderr)
+        self.assertNotIn(secret, result.stdout)
+        self.assertNotIn(secret, result.stderr)
+
+    def test_validate_never_retries_an_unauthorized_key(self):
+        secret = "rejected-secret"
+
+        def responder(_call_number):
+            return (401, None, None)
+
+        server, calls = self.start_stub_tikin(responder)
+        self.write_env_pointing_at(server, secret)
+
+        result = self.run_config("validate", check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("invalid TIKIN_API_KEY", result.stderr)
+        self.assertNotIn("attempt", result.stderr)
+        self.assertNotIn(secret, result.stdout)
+        self.assertNotIn(secret, result.stderr)
+
+    def test_validate_never_retries_a_deterministic_client_error(self):
+        secret = "bad-request-secret"
+
+        def responder(_call_number):
+            return (422, None, None)
+
+        server, calls = self.start_stub_tikin(responder)
+        self.write_env_pointing_at(server, secret)
+
+        result = self.run_config("validate", check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("HTTP 422", result.stderr)
+        self.assertNotIn("attempt", result.stderr)
+
+    def test_validate_retries_a_connection_failure_and_reports_the_budget(self):
+        # Bind a port, then close it so nothing is listening: every attempt fails
+        # to connect, which is a transient class and must be retried 3 times.
+        import socket
+
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        dead_port = probe.getsockname()[1]
+        probe.close()
+
+        config_dir = self.xdg_home / "tikin"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / ".env").write_text(
+            "TIKIN_API_KEY=unreachable-secret\n"
+            f"TIKIN_BASE_URL=http://127.0.0.1:{dead_port}\n"
+        )
+
+        result = self.run_config("validate", check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("attempt 1/3", result.stderr)
+        self.assertIn("attempt 2/3", result.stderr)
+        self.assertIn("after 3 attempts", result.stderr)
+        self.assertNotIn("unreachable-secret", result.stderr)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 ---
 name: tikin-endpoint-discovery
-version: 0.2.0
-description: v0.2.0｜Find the right tikin endpoint among 1,000+ across 16+ platforms. Use when you know the goal (e.g. "get a user's posts on Douyin") but not the exact API path, or when a platform has no dedicated skill (LinkedIn, Reddit, Bilibili, Weibo, WeChat, Kuaishou, Zhihu, Lemon8, etc.). Searches a bundled index and maps results to REST calls.
+version: 0.2.1
+description: v0.2.1｜Find the right tikin endpoint among 1,000+ across 16+ platforms. Use when you know the goal (e.g. "get a user's posts on Douyin") but not the exact API path, or when a platform has no dedicated skill (LinkedIn, Reddit, Bilibili, Weibo, WeChat, Kuaishou, Zhihu, Lemon8, etc.). Searches a bundled index and maps results to REST calls.
 ---
 
 # tikin — Endpoint Discovery
@@ -42,16 +42,24 @@ skill's directory (it works from any cwd; no PATH setup needed):
 
 ```bash
 # goal-based search, scoped to a platform
-<this-skill-dir>/scripts/tikin-find-endpoint "one video" --platform tiktok
-<this-skill-dir>/scripts/tikin-find-endpoint "user posts" --platform douyin
-<this-skill-dir>/scripts/tikin-find-endpoint "comments" --platform youtube --method GET
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-find-endpoint "one video" --platform tiktok
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-find-endpoint "user posts" --platform douyin
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-find-endpoint "comments" --platform youtube --method GET
 
 # no platform filter — search everything
-<this-skill-dir>/scripts/tikin-find-endpoint "trending hashtag"
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-find-endpoint "trending hashtag"
 ```
 
 (`<this-skill-dir>` = the directory containing this SKILL.md. Other skills refer to this tool
 as `tikin-find-endpoint` for short — it always means this script.)
+
+The CLI runs on this skill's own pinned interpreter, declared by `pyproject.toml`, `uv.lock`
+and `.python-version` beside this file. Always launch it through `uv run --project <this-skill-dir>`; never through a
+bare `python3` or the bare script path, which resolve to whatever the PATH happens to point at. It
+needs [uv](https://docs.astral.sh/uv/) >= 0.8 — if `uv` is missing the CLI says so and prints the
+install command. The CLI also re-execs itself into `<this-skill-dir>/.venv` and rebuilds that
+environment from `uv.lock` when it is missing, so a wrong or absent interpreter is repaired rather
+than silently used. Searching the index needs no network and no API key.
 
 Output lines look like:
 ```
@@ -67,9 +75,12 @@ Given `GET /api/v1/{platform}/{api}/{action}`, call it via REST (see `tikin-rest
 
 ```bash
 BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
-curl -s "$BASE/api/v1/tiktok/app/v3/fetch_one_video?aweme_id=..." \
+curl -s --max-time 30 "$BASE/api/v1/tiktok/app/v3/fetch_one_video?aweme_id=..." \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
+
+Timeouts, which failures to retry (and which never to), and pagination budgets: follow the
+**Reliability** section in `tikin-rest-api`.
 
 ## Platforms without a dedicated skill
 

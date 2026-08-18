@@ -1,7 +1,7 @@
 ---
 name: tikin-tiktok
-version: 0.2.0
-description: v0.2.0｜Work with TikTok URLs and data via tikin — fetch videos, user profiles and post lists, run search, pull trends/ads insights, creator analytics, comment keywords, and shop search. Use when the user provides a TikTok URL or the task targets TikTok. Covers the App-V3, Ads, Creator, Analytics, and Shop APIs.
+version: 0.2.1
+description: v0.2.1｜Work with TikTok URLs and data via tikin — fetch videos, user profiles and post lists, run search, pull trends/ads insights, creator analytics, comment keywords, and shop search. Use when the user provides a TikTok URL or the task targets TikTok. Covers the App-V3, Ads, Creator, Analytics, and Shop APIs.
 ---
 
 # TikTok (via tikin)
@@ -67,7 +67,7 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
-curl -s "$BASE/api/v1/tiktok/app/v3/fetch_user_post_videos?sec_user_id=SEC_UID&count=20&max_cursor=0" \
+curl -s --max-time 30 "$BASE/api/v1/tiktok/app/v3/fetch_user_post_videos?sec_user_id=SEC_UID&count=20&max_cursor=0" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
@@ -75,7 +75,17 @@ curl -s "$BASE/api/v1/tiktok/app/v3/fetch_user_post_videos?sec_user_id=SEC_UID&c
 
 User/video lists use `max_cursor` (start `0`) + `count`; search uses `offset` + `count`; comments
 and hashtag video lists use `cursor` + `count`. Read the next cursor and `has_more` from the
-response; loop until exhausted. **Each page is billed — cap it.**
+response; loop until exhausted.
+
+**Each page is billed — every loop needs a budget.** With a user target, that target is the budget;
+with no target, stop at the default 50 pages / 5,000 items from `tikin-rest-api`'s **Reliability**
+section. When the budget ends the loop, report it as `budget exhausted` — pages and items fetched,
+whether `has_more` is still true, and the cursor to resume from — instead of presenting a partial
+pull as complete.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Hand off to task skills
 

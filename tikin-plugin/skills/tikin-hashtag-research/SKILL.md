@@ -1,7 +1,7 @@
 ---
 name: tikin-hashtag-research
-version: 0.2.0
-description: v0.2.0｜Research a hashtag or keyword via tikin — popularity signals, top and recent content, and related hashtags across supported platforms. Use when the user asks about a hashtag, related tags, content ideas, or supplies a supported hashtag URL.
+version: 0.2.1
+description: v0.2.1｜Research a hashtag or keyword via tikin — popularity signals, top and recent content, and related hashtags across supported platforms. Use when the user asks about a hashtag, related tags, content ideas, or supplies a supported hashtag URL.
 ---
 
 # Hashtag Research
@@ -55,13 +55,25 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 
 ## Cost awareness
 
-Detail/list calls are 1 each; pulling top-posts pages multiplies calls. Cap and warn for deep pulls.
+Detail/list calls are 1 each; pulling top-posts pages multiplies calls. Warn before deep pulls.
+Every call carries `--max-time 30` (see the **Reliability** section in `tikin-rest-api`).
+
+**Budget the top-posts loop.** With a user target post count, that target is the budget; with no
+target, stop at **5 pages per hashtag per platform**, inside the overall 50-page / 5,000-item
+default from `tikin-rest-api`'s **Reliability** section. When the budget ends the loop, report it
+as `budget exhausted` (pages and posts fetched, whether more remain) and say that the related-tag
+list is derived from that sample only.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried. A 404 here usually means the hashtag does not exist — report "no data", do not retry.
 
 ## Verification gate
 
 1. Hashtag resolved (or clearly report "no data / low volume").
 2. Top posts are actually tagged with the hashtag.
 3. Related tags derived from real co-occurrence, not guessed.
+4. Sample size stated, including whether the budget capped the pull.
 
 ## Red flags
 

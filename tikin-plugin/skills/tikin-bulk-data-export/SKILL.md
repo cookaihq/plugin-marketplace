@@ -1,7 +1,7 @@
 ---
 name: tikin-bulk-data-export
-version: 0.2.0
-description: v0.2.0｜Fetch large social-media lists via tikin (posts, followers, search results, comments) with safe pagination, dedup, and CSV or JSON export. Use when the user wants all posts, a dataset, an export, or any large repeated pull from a supported platform or URL.
+version: 0.2.1
+description: v0.2.1｜Fetch large social-media lists via tikin (posts, followers, search results, comments) with safe pagination, dedup, and CSV or JSON export. Use when the user wants all posts, a dataset, an export, or any large repeated pull from a supported platform or URL.
 ---
 
 # Bulk Data Export
@@ -47,7 +47,7 @@ balance:
 
 ```bash
 # pages = ceil(target_rows / page_size)  → that many billed calls
-curl -s "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
+curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
 State the estimated calls and get the user's go-ahead before running.
@@ -56,8 +56,18 @@ State the estimated calls and get the user's go-ahead before running.
 
 - Use the platform's cursor (`max_cursor` / `pagination_token` / `continuation_token` / `cursor` /
   `cursor`+`index`) — see `tikin-rest-api` and the platform skill.
-- Loop until `has_more` is false **or** the user's target row count is reached (hard cap).
-- Add a short delay / concurrency cap ≤4 (QPS 10/sec). Retry transient 429/5xx with backoff.
+- **The budget is the smaller of the user's target row count and the default hard cap of 50 pages
+  or 5,000 rows** (the default from `tikin-rest-api`'s **Reliability** section). A user target
+  above the default cap does not lift it — confirm the larger budget with the user first, then
+  state the raised number explicitly before running.
+- Loop until whichever comes first: `has_more` is false, the user's target row count, or that cap.
+- Add a short delay / concurrency cap ≤4 (QPS 10/sec). Retry transient errors (429/5xx/timeouts)
+  per the **Reliability** section in `tikin-rest-api`: 3 attempts total, 1s then 2s backoff,
+  honouring `Retry-After` on a 429, and never retrying 401/403/404/422.
+- Retries do not consume the pagination budget; only pages actually retrieved do.
+- **When the cap ends the loop, report it as `budget exhausted`** — rows fetched, pages fetched,
+  whether `has_more` is still true, and the cursor to resume from. This is a distinct outcome from
+  "the source ran out of data"; never present it as a complete export.
 - Dedup by stable id (e.g. `aweme_id` / post id) as you go.
 
 ## Step 3 — Export
@@ -69,7 +79,8 @@ State the estimated calls and get the user's go-ahead before running.
 
 ## Verification gate
 
-1. Row count ≈ requested (note if the source ran out early).
+1. Row count ≈ requested, and the stop reason is stated: source exhausted, user target reached, or
+   `budget exhausted`.
 2. No duplicate ids in the output.
 3. File written and non-empty; CSV header matches columns.
 
@@ -77,4 +88,7 @@ State the estimated calls and get the user's go-ahead before running.
 
 - Skipping the cost estimate — never start a bulk pull without one.
 - Ignoring the user's row cap / `has_more` (infinite loop, credit burn).
-- Silent truncation — always report how many rows were actually fetched vs. requested.
+- Running with no cap at all because the user gave no target — the 50-page / 5,000-row default
+  applies exactly then.
+- Silent truncation — always report how many rows were actually fetched vs. requested, and say
+  when the budget rather than the source ended the pull.

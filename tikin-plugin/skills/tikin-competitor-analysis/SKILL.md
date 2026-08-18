@@ -1,7 +1,7 @@
 ---
 name: tikin-competitor-analysis
-version: 0.2.0
-description: v0.2.0｜Benchmark multiple social-media accounts via tikin — followers, engagement rate, posting cadence, top content, and growth signals. Use when the user asks to compare accounts or supplies supported profile URLs for a competitive analysis.
+version: 0.2.1
+description: v0.2.1｜Benchmark multiple social-media accounts via tikin — followers, engagement rate, posting cadence, top content, and growth signals. Use when the user asks to compare accounts or supplies supported profile URLs for a competitive analysis.
 ---
 
 # Competitor Analysis
@@ -43,7 +43,7 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 
 1. **Collect the account list** (handles/URLs) and the platform(s).
 2. **For each account, run the `tikin-creator-analytics` workflow** (resolve → profile → recent posts →
-   metrics). Use the same post-count cap for every account so the comparison is fair.
+   metrics). Use the same post-count budget for every account so the comparison is fair.
 3. **Build a comparison table**: followers, avg engagement, engagement rate, posts/week, top post,
    median views. One row per account.
 4. **Rank and summarize**: who leads on reach vs. engagement vs. consistency; notable content
@@ -52,14 +52,25 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Cost awareness
 
 Cost ≈ (1 profile + N post-pages) × number of accounts. Multiply it out and state the total before
-running; cap pages and account count. Check balance/usage with
-`curl -s "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"`.
+running. Check balance/usage with
+`curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"`.
+
+**Budget both dimensions.** With user-stated numbers, those are the budget; with no target, the
+defaults are **10 accounts and 5 post-pages per account**, inside the overall 50-page / 5,000-item
+cap from `tikin-rest-api`'s **Reliability** section. When a budget ends the run, report it as
+`budget exhausted`: which accounts were fully covered, which were cut short, and which were not
+fetched at all — never quietly drop accounts from the comparison table.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Verification gate
 
 1. Every account resolved and has a non-empty post sample.
 2. Same sample size/time window across accounts (note any account with fewer posts).
 3. Rates within sane bounds.
+4. Any account skipped or truncated by the budget is named in the report.
 
 ## Red flags
 

@@ -7,16 +7,113 @@ Usage:
 Matches QUERY terms against the path, summary, and tag; ranks by number of terms matched
 (then by path length). --platform filters by the /{platform}/ path segment.
 """
-import argparse
-import json
+# --- runtime bootstrap (ADR 0007) -------------------------------------------
+# Runs before anything else so the process always ends up on this skill's own
+# pinned interpreter, no matter how the caller launched the script. Python 3.9
+# compatible syntax only: the system interpreter may execute this part.
 import os
+import shlex
+import subprocess
 import sys
 
+REEXEC_ENV = "TIKIN_ENDPOINT_DISCOVERY_BOOTSTRAP_REEXEC"
+
+# scripts/tikin-find-endpoint -> skills/tikin-endpoint-discovery/
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# A relative UV_PROJECT_ENVIRONMENT resolves against the project root, the way uv
+# resolves it. An absolute value is returned unchanged by os.path.join.
+VENV_DIR = os.path.join(SKILL_DIR, os.environ.get("UV_PROJECT_ENVIRONMENT") or ".venv")
+VENV_PY = os.path.join(VENV_DIR, "bin", "python")
+
+
+def _bootstrap_fail(message):
+    sys.stderr.write(message + "\n")
+    raise SystemExit(1)
+
+
+def _bootstrap_manual_hint():
+    return "rm -rf %s && uv sync --no-dev --project %s" % (
+        shlex.quote(VENV_DIR),
+        shlex.quote(SKILL_DIR),
+    )
+
+
+def _bootstrap_venv_is_valid():
+    # bin/python alone is not enough: an interrupted sync, a same-named directory
+    # or a stale symlink all leave an interpreter behind without a real venv.
+    return os.path.exists(VENV_PY) and os.path.exists(
+        os.path.join(VENV_DIR, "pyvenv.cfg")
+    )
+
+
+_BOOTSTRAP_TARGET = os.path.realpath(VENV_DIR)
+
+if os.path.realpath(sys.prefix) == _BOOTSTRAP_TARGET:
+    if os.environ.get(REEXEC_ENV) == _BOOTSTRAP_TARGET:
+        os.environ.pop(REEXEC_ENV, None)
+else:
+    if os.environ.get(REEXEC_ENV) == _BOOTSTRAP_TARGET:
+        _bootstrap_fail(
+            "tikin-endpoint-discovery runtime is broken: restarted into %s but the "
+            "interpreter is still outside that venv.\nRebuild it manually: %s"
+            % (VENV_DIR, _bootstrap_manual_hint())
+        )
+    if not _bootstrap_venv_is_valid():
+        try:
+            _probe = subprocess.run(
+                ["uv", "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            _bootstrap_fail(
+                "uv is not installed. Run: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            )
+        _parts = _probe.stdout.decode("utf-8", "replace").split()  # "uv 0.8.11 (...)"
+        _found = _parts[1] if len(_parts) > 1 else "0"
+        try:
+            _numeric = tuple(int(x) for x in (_found.split(".") + ["0", "0"])[:2])
+        except ValueError:
+            _numeric = (0, 0)  # uv error output is "error: ...", not a version
+        if _numeric < (0, 8):
+            _bootstrap_fail(
+                "uv is too old (need >= 0.8, found %s). Run: uv self update" % _found
+            )
+        sys.stderr.write(
+            "[bootstrap] runtime missing, rebuilding %s from uv.lock ...\n" % VENV_DIR
+        )
+        try:
+            _sync = subprocess.run(
+                # --no-dev: the runtime only ever needs the shipping deps; dev
+                # extras must not be pulled onto a user machine at first run.
+                ["uv", "sync", "--no-dev", "--project", SKILL_DIR],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=600,  # every network call needs a budget (ADR 0006)
+            )
+        except subprocess.TimeoutExpired:
+            _bootstrap_fail(
+                "uv sync did not finish within 600s, the network is likely down. "
+                "Run manually: " + _bootstrap_manual_hint()
+            )
+        if _sync.returncode != 0 or not _bootstrap_venv_is_valid():
+            _bootstrap_fail(
+                "uv sync failed, the runtime could not be rebuilt (run manually: %s):\n%s"
+                % (
+                    _bootstrap_manual_hint(),
+                    _sync.stdout.decode("utf-8", "replace"),
+                )
+            )
+    os.environ[REEXEC_ENV] = _BOOTSTRAP_TARGET
+    os.execv(VENV_PY, [VENV_PY] + sys.argv)
+# --- end runtime bootstrap ---------------------------------------------------
+
+import argparse
+import json
+
 # The script lives in <skill>/scripts/; the index ships beside it in <skill>/references/.
-INDEX = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "references", "endpoint-index.json",
-)
+INDEX = os.path.join(SKILL_DIR, "references", "endpoint-index.json")
 
 
 def score(rec, terms):

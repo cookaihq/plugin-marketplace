@@ -1,7 +1,7 @@
 ---
 name: tikin-youtube
-version: 0.2.0
-description: v0.2.0｜Work with YouTube URLs and data via tikin — fetch video info, downloadable stream URLs, captions/subtitles, comments and replies, channel info, and run general/shorts search. Use when the user provides a YouTube URL or the task targets YouTube. Covers the YouTube Web-V2 API.
+version: 0.2.1
+description: v0.2.1｜Work with YouTube URLs and data via tikin — fetch video info, downloadable stream URLs, captions/subtitles, comments and replies, channel info, and run general/shorts search. Use when the user provides a YouTube URL or the task targets YouTube. Covers the YouTube Web-V2 API.
 ---
 
 # YouTube (via tikin)
@@ -60,14 +60,24 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
-curl -s "$BASE/api/v1/youtube/web_v2/get_video_info?video_id=dQw4w9WgXcQ" \
+curl -s --max-time 30 "$BASE/api/v1/youtube/web_v2/get_video_info?video_id=dQw4w9WgXcQ" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
 ## Pagination
 
 Comments, replies, channel feeds, and the `*_v2` search endpoints use `continuation_token` — pass
-the token from the previous response; stop when none is returned. **Each page is billed — cap it.**
+the token from the previous response; stop when none is returned.
+
+**Each page is billed — every loop needs a budget.** With a user target, that target is the budget;
+with no target, stop at the default 50 pages / 5,000 items from `tikin-rest-api`'s **Reliability**
+section. When the budget ends the loop, report it as `budget exhausted` — pages and items fetched,
+whether more remains, and the continuation token to resume from — instead of presenting a partial
+pull as complete.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Hand off to task skills
 

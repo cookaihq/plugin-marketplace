@@ -1,7 +1,7 @@
 ---
 name: tikin-social-listening
-version: 0.2.0
-description: v0.2.0｜Monitor mentions across supported social platforms via tikin — collect posts, classify sentiment, cluster themes, and deliver a cited digest. Use for brand sentiment, keyword monitoring, social listening, or supported URLs that should seed a listening query.
+version: 0.2.1
+description: v0.2.1｜Monitor mentions across supported social platforms via tikin — collect posts, classify sentiment, cluster themes, and deliver a cited digest. Use for brand sentiment, keyword monitoring, social listening, or supported URLs that should seed a listening query.
 ---
 
 # Social Listening
@@ -57,21 +57,35 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Cost awareness — IMPORTANT
 
 This is the most call-heavy skill: every search page on every platform is a billed call.
-**State an estimated call count before running** (pages × platforms), cap pages per platform,
-and check your balance/usage first:
+**State an estimated call count before running** (pages × platforms) and check your balance/usage
+first:
 
 ```bash
-curl -s "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
+curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
+
+**Budget every platform loop separately, and the run as a whole.** With a user target mention
+count, that target is the budget; with no target, stop at **10 pages per platform** and at the
+overall 50-page / 5,000-item default from `tikin-rest-api`'s **Reliability** section, whichever
+comes first. When a budget ends a loop, report it as `budget exhausted` per platform: pages and
+mentions fetched, whether more remain, and the cursor to resume from. A digest built on a
+budget-capped sample must say so — the volume number is a floor, not a total.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried. One platform failing all 3 attempts does not abort the run: mark that platform as not
+covered and continue with the rest.
 
 ## Verification gate
 
 1. Mentions actually match the query (filter false positives).
 2. Every theme/claim in the digest cites a real source URL.
 3. Sentiment labels are justified by the quoted text.
+4. Per-platform coverage stated: complete, budget-capped, or failed.
 
 ## Red flags
 
-- Unbounded multi-platform pagination — runs up credits fast; always cap and warn.
+- Unbounded multi-platform pagination — runs up credits fast; always budget and warn.
+- Reporting a budget-capped volume count as the true total.
 - Reporting sentiment without citations.
 - Counting unrelated keyword collisions as mentions.

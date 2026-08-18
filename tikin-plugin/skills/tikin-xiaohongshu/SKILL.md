@@ -1,7 +1,7 @@
 ---
 name: tikin-xiaohongshu
-version: 0.2.0
-description: v0.2.0｜Work with Xiaohongshu / RedNote (小红书) URLs and data via tikin — fetch image and video note details, user info and posted notes, search notes/users/products/images, and pull note comments and sub-comments. Use when the user provides a Xiaohongshu URL/share text or the task targets Xiaohongshu. Covers the Xiaohongshu App-V2 API.
+version: 0.2.1
+description: v0.2.1｜Work with Xiaohongshu / RedNote (小红书) URLs and data via tikin — fetch image and video note details, user info and posted notes, search notes/users/products/images, and pull note comments and sub-comments. Use when the user provides a Xiaohongshu URL/share text or the task targets Xiaohongshu. Covers the Xiaohongshu App-V2 API.
 ---
 
 # Xiaohongshu / RedNote / 小红书 (via tikin)
@@ -60,14 +60,24 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
-curl -s "$BASE/api/v1/xiaohongshu/app_v2/search_notes?keyword=护肤&page=1&sort_type=general" \
+curl -s --max-time 30 "$BASE/api/v1/xiaohongshu/app_v2/search_notes?keyword=护肤&page=1&sort_type=general" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
 ## Pagination
 
 Note/comment lists use `cursor` (+`index` for comments); search uses `page`. Loop until the
-response signals no more results. **Each page is billed — cap it.**
+response signals no more results.
+
+**Each page is billed — every loop needs a budget.** With a user target, that target is the budget;
+with no target, stop at the default 50 pages / 5,000 items from `tikin-rest-api`'s **Reliability**
+section. When the budget ends the loop, report it as `budget exhausted` — pages and items fetched,
+whether more remains, and the cursor/page to resume from — instead of presenting a partial pull as
+complete.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Hand off to task skills
 

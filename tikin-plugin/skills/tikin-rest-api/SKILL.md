@@ -1,7 +1,7 @@
 ---
 name: tikin-rest-api
-version: 0.2.0
-description: v0.2.0｜Call the tikin REST API directly with curl/HTTP. Covers base URL, Bearer auth, the /api/v1/{platform}/... path scheme, pagination, rate limits, retries, error handling, and per-call cost/balance awareness. Use for any direct data call against tikin.
+version: 0.2.1
+description: v0.2.1｜Call the tikin REST API directly with curl/HTTP. Covers base URL, Bearer auth, the /api/v1/{platform}/... path scheme, pagination, rate limits, retries, error handling, and per-call cost/balance awareness. Use for any direct data call against tikin.
 ---
 
 # tikin — REST API
@@ -53,23 +53,26 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 
 # TikTok: one video by id
-curl -s "$BASE/api/v1/tiktok/app/v3/fetch_one_video?aweme_id=7372484719365098283" \
+curl -s --max-time 30 "$BASE/api/v1/tiktok/app/v3/fetch_one_video?aweme_id=7372484719365098283" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 
 # Instagram: user info
-curl -s "$BASE/api/v1/instagram/v2/fetch_user_info?username=instagram" \
+curl -s --max-time 30 "$BASE/api/v1/instagram/v2/fetch_user_info?username=instagram" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 
 # Douyin search (POST with a JSON body)
-curl -s -X POST "$BASE/api/v1/douyin/search/fetch_general_search_v1" \
+curl -s --max-time 30 -X POST "$BASE/api/v1/douyin/search/fetch_general_search_v1" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"keyword": "美食", "offset": 0, "count": 10}'
 
 # Batch (POST) — some endpoints take a RAW JSON ARRAY body (not an object)
-curl -s -X POST "$BASE/api/v1/tiktok/app/v3/fetch_multi_video" \
+curl -s --max-time 30 -X POST "$BASE/api/v1/tiktok/app/v3/fetch_multi_video" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -H "Content-Type: application/json" \
   -d '["7372484719365098283","7372484719365098284"]'
 ```
+
+Every call carries `--max-time` — see [Reliability](#reliability) for the values and for what to do
+when a call fails.
 
 Paths, methods, and parameters are exactly as returned by `tikin-find-endpoint` (the
 `tikin-endpoint-discovery` skill's bundled search CLI) — pass them through unchanged.
@@ -86,20 +89,62 @@ Paths, methods, and parameters are exactly as returned by `tikin-find-endpoint` 
 | Xiaohongshu | `cursor` (+ `index`) | |
 
 Loop until the response's `has_more` is false or no next cursor is returned. **Each page is a
-billed call — cap pages and warn the user before large pulls** (hand off to `tikin-bulk-data-export`
-for big jobs).
+billed call — every loop needs a budget** (see [Reliability](#reliability); hand off to
+`tikin-bulk-data-export` for big jobs).
 
-## Rate limits, retries
+## Reliability
+
+**This section is the single source of truth for timeouts, retries, and pagination budgets across
+every tikin skill.** Other skills point here instead of restating the numbers.
+
+### Timeouts — every call, no exceptions
+
+| Call type | Flag |
+|---|---|
+| JSON read/search/batch against `$BASE` | `--max-time 30` |
+| Media download from a URL tikin returned | `--max-time 300` |
+| A file known to be larger than ~500 MB | raise the value explicitly and say so — never drop the flag |
+
+Add `--connect-timeout 10` when you want the connect phase to fail faster than the whole call.
+A `curl` invocation without a time limit can hang the whole task; there is no case where omitting
+it is correct.
+
+### Classify the failure before retrying
+
+- **Transient — retry:** HTTP 429, any HTTP 5xx, connection timeouts, connection resets, TLS
+  handshake failures, DNS resolution failures (`curl` exit codes 6, 7, 28, 35, 52, 56).
+- **Deterministic — never retry, report and stop:** 401 / 403 (key missing, invalid, or not
+  entitled → run `tikin-setup`), 404 (wrong path → re-run `tikin-find-endpoint`), 422 (bad
+  parameters → fix them), and insufficient balance. Repeating these produces the same failure and
+  burns time; give the user the concrete next step instead.
+
+### Retry budget
+
+- **3 attempts total** — the first call plus at most 2 retries.
+- Exponential backoff: wait **1s** before the first retry, **2s** before the second.
+- If a 429 response carries `Retry-After`, honour that value instead of the backoff.
+- When you report a retry, say which attempt failed and why (status code or `curl` exit code).
+  Never print the API key in that report.
+- After 3 failed attempts, stop and report the last error — do not keep looping.
+
+### Pagination budget
 
 - **QPS 10/sec.** Add a small delay or a concurrency cap (≤4) in loops.
-- **Retry** transient 429/5xx up to 3× with exponential backoff (1s, 2s, 4s).
+- When the user gave a target (row count, post count, time window), that target is the budget.
+- **When the user gave no target, the default budget is 50 pages or 5,000 items, whichever comes
+  first.** Retries do not count against it — only pages actually retrieved do.
+- Stop the loop on whichever comes first: `has_more` is false / no next cursor, the user's target,
+  or the default budget.
+- **When the budget stops the loop, say so explicitly** — report it as `budget exhausted`, state
+  how many pages and items were fetched, whether more data remains (`has_more` still true), and the
+  cursor to resume from. Never truncate silently and never present a budget-capped pull as complete.
 
 ## Cost & balance awareness
 
 tikin bills per call against your prepaid balance. Check balance/usage anytime:
 
 ```bash
-curl -s "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
+curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
 Prices vary per endpoint. Cap pagination and estimate a run's cost (pages × per-call price)
@@ -115,5 +160,8 @@ Before claiming success:
 ## Red flags
 
 - Hardcoding the API key in code/commits — always read `$TIKIN_API_KEY`.
+- A `curl` call with no `--max-time` — one hung connection stalls the whole task.
+- Retrying a 401/403/404/422 — it will fail identically; fix the cause instead.
 - Unbounded pagination loops (runs up cost).
+- Reporting a budget-capped pull as if it were complete.
 - Ignoring `has_more` / next-cursor and re-fetching page 1.

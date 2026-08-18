@@ -1,7 +1,7 @@
 ---
 name: tikin-douyin
-version: 0.2.0
-description: v0.2.0｜Work with Douyin (抖音) URLs and data via tikin — fetch videos, user profiles and post lists, video comments, and run video/user/general search via Douyin's dedicated search series. Use when the user provides a Douyin URL or the task targets Douyin. Covers App-V3 and the Douyin Search series.
+version: 0.2.1
+description: v0.2.1｜Work with Douyin (抖音) URLs and data via tikin — fetch videos, user profiles and post lists, video comments, and run video/user/general search via Douyin's dedicated search series. Use when the user provides a Douyin URL or the task targets Douyin. Covers App-V3 and the Douyin Search series.
 ---
 
 # Douyin / 抖音 (via tikin)
@@ -64,12 +64,12 @@ discovery.)
 
 ```bash
 # Video search — POST with a JSON body
-curl -s -X POST "$BASE/api/v1/douyin/search/fetch_video_search_v2" \
+curl -s --max-time 30 -X POST "$BASE/api/v1/douyin/search/fetch_video_search_v2" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"keyword": "美食"}'
 
 # One video by id
-curl -s "$BASE/api/v1/douyin/app/v3/fetch_one_video_v2?aweme_id=7637462264047710705" \
+curl -s --max-time 30 "$BASE/api/v1/douyin/app/v3/fetch_one_video_v2?aweme_id=7637462264047710705" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
 ```
 
@@ -77,7 +77,16 @@ curl -s "$BASE/api/v1/douyin/app/v3/fetch_one_video_v2?aweme_id=7637462264047710
 
 App-V3 user/video lists use `max_cursor` + `count`; comments use `cursor` + `count`; the Search
 series pages via a `cursor` field in the JSON body. Loop on the returned cursor/`has_more`.
-**Cap pages — each is billed.**
+
+**Each page is billed — every loop needs a budget.** With a user target, that target is the budget;
+with no target, stop at the default 50 pages / 5,000 items from `tikin-rest-api`'s **Reliability**
+section. When the budget ends the loop, report it as `budget exhausted` — pages and items fetched,
+whether `has_more` is still true, and the cursor to resume from — instead of presenting a partial
+pull as complete.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Hand off to task skills
 

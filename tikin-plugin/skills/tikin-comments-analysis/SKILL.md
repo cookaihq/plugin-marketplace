@@ -1,7 +1,7 @@
 ---
 name: tikin-comments-analysis
-version: 0.2.0
-description: v0.2.0｜Pull and analyze comments from a supported post or video URL via tikin — sentiment breakdown, recurring themes, top comments, and notable questions or complaints. Use when the user asks to analyze comments, summarize discussion, or provides a social-media post URL.
+version: 0.2.1
+description: v0.2.1｜Pull and analyze comments from a supported post or video URL via tikin — sentiment breakdown, recurring themes, top comments, and notable questions or complaints. Use when the user asks to analyze comments, summarize discussion, or provides a social-media post URL.
 ---
 
 # Comments Analysis
@@ -55,17 +55,28 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 
 ## Cost awareness
 
-Each comment page (and reply page) is a billed call. Cap pages; warn for viral posts with huge
-threads. Check balance/usage with
-`curl -s "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"`.
+Each comment page (and reply page) is a billed call. Warn for viral posts with huge threads. Check
+balance/usage with
+`curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"`.
+
+**Every comment and reply loop needs a budget.** With a user target comment count, that target is
+the budget; with no target, stop at the default 50 pages / 5,000 comments from `tikin-rest-api`'s
+**Reliability** section — counted across the comment and reply loops combined, not per loop. When
+the budget ends the pull, report it as `budget exhausted`: comments fetched, pages fetched, and
+whether more remain.
+
+Transient errors (429/5xx/timeouts): follow the **Reliability** section in `tikin-rest-api` —
+3 attempts total, 1s then 2s backoff, `Retry-After` wins on a 429, and 401/403/404/422 are never
+retried.
 
 ## Verification gate
 
 1. Comments fetched and tied to the right post.
 2. Themes/sentiment backed by quoted comments.
-3. Report the sample size (comments analyzed vs. total).
+3. Report the sample size (comments analyzed vs. total) and whether the budget capped the pull.
 
 ## Red flags
 
 - Summarizing 50 comments on a 50k-comment post as representative — disclose the sample.
 - Unbounded reply pagination.
+- Presenting a budget-capped sample as if the whole thread was read.

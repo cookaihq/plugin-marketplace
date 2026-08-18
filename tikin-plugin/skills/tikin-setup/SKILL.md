@@ -1,7 +1,7 @@
 ---
 name: tikin-setup
-version: 0.2.0
-description: v0.2.0｜Install, update, and configure tikin social-media skills or plugins. Use when the user first mentions tikin, needs to install or repair the tikin package, has a missing or invalid TIKIN_API_KEY, wants browser-assisted API-key creation, or wants to change per-platform auto/confirm routing settings.
+version: 0.2.1
+description: v0.2.1｜Install, update, and configure tikin social-media skills or plugins. Use when the user first mentions tikin, needs to install or repair the tikin package, has a missing or invalid TIKIN_API_KEY, wants browser-assisted API-key creation, or wants to change per-platform auto/confirm routing settings.
 ---
 
 # tikin Setup
@@ -14,9 +14,19 @@ configuration, then hand the user's task to the owning `tikin-*` skill.
 Resolve local state through `scripts/tikin-config`; do not parse or print secrets yourself.
 
 ```bash
-python3 <this-skill-dir>/scripts/tikin-config init
-python3 <this-skill-dir>/scripts/tikin-config status
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config init
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config status
 ```
+
+(`<this-skill-dir>` = the directory containing this SKILL.md.)
+
+The helper runs on this skill's own pinned interpreter, declared by `pyproject.toml`,
+`uv.lock` and `.python-version` beside this file. Always launch it through `uv run --project <this-skill-dir>`; never
+through a bare `python3`, which resolves to whatever the PATH happens to point at. It needs
+[uv](https://docs.astral.sh/uv/) >= 0.8 — if `uv` is missing the helper says so and prints the
+install command. The helper also re-execs itself into `<this-skill-dir>/.venv` and rebuilds that
+environment from `uv.lock` when it is missing, so a wrong or absent interpreter is repaired rather
+than silently used.
 
 The helper honors `XDG_CONFIG_HOME` and defaults to:
 
@@ -78,8 +88,16 @@ plugins or skills. Preserve `.env` and `settings.json` across updates.
 Run the helper instead of treating a non-empty value as valid:
 
 ```bash
-python3 <this-skill-dir>/scripts/tikin-config validate
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config validate
 ```
+
+`validate` classifies its own failures the way `tikin-rest-api` describes under **Reliability**:
+401/403 fails immediately as an invalid key, while a transient failure (429, 5xx, timeout,
+connection error) is retried up to 3 attempts total with a 1s then 2s backoff — honouring
+`Retry-After` on a 429 — and logs each retry to stderr without the key. Each attempt uses a 30s
+timeout, matching the `--max-time 30` that **Reliability** mandates for JSON calls against
+`$BASE`; override it with `--timeout <seconds>` only when you have a reason to. Treat its exit
+status as final; do not wrap it in a retry loop of your own.
 
 If validation succeeds, continue. If the key is missing or invalid:
 
@@ -98,7 +116,7 @@ If validation succeeds, continue. If the key is missing or invalid:
 7. Pipe the clipboard into the helper without command-line interpolation, for example on macOS:
 
    ```bash
-   pbpaste | python3 <this-skill-dir>/scripts/tikin-config set-key
+   pbpaste | uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config set-key
    ```
 
    Use the equivalent clipboard reader on other operating systems. If no secret-safe transfer is
@@ -126,13 +144,13 @@ Offer these choices during first setup and when the user asks to change preferen
 
 ```bash
 # All supported platforms use tikin automatically (default).
-python3 <this-skill-dir>/scripts/tikin-config set-routing --default auto --clear-platforms
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config set-routing --default auto --clear-platforms
 
 # Every supported platform requires confirmation.
-python3 <this-skill-dir>/scripts/tikin-config set-routing --default confirm --clear-platforms
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config set-routing --default confirm --clear-platforms
 
 # Only selected platforms are automatic; all others require confirmation.
-python3 <this-skill-dir>/scripts/tikin-config set-routing --default confirm --clear-platforms \
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config set-routing --default confirm --clear-platforms \
   --platform xiaohongshu=auto --platform douyin=auto
 ```
 

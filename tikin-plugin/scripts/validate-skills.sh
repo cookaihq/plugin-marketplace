@@ -201,8 +201,20 @@ if [ -x skills/tikin-setup/scripts/tikin-config ]; then
 else
   check 1 "tikin-config is executable"
 fi
-python3 -m unittest tests/test_tikin_config.py >/dev/null 2>&1
-check $? "tikin-config behavior tests pass"
+# The tests resolve their own interpreter (tikin-setup's pinned .venv, built via
+# uv if absent) — python3 here only drives unittest, it never runs tikin-config.
+# A machine without uv and without a prebuilt runtime gets a SKIP with the build
+# command, not a wall of red: an unbuildable runtime is a setup gap, not a
+# structural defect of the plugin, and this validator only asserts structure.
+unittest_out="$(python3 -m unittest tests/test_tikin_config.py 2>&1)"
+unittest_rc=$?
+if [ "$unittest_rc" -eq 0 ] && printf '%s' "$unittest_out" | grep -q 'skipped='; then
+  check 0 "tikin-config behavior tests pass (SKIPPED — tikin-setup runtime unavailable)"
+  echo "      build it with: uv sync --no-dev --project skills/tikin-setup"
+else
+  check "$unittest_rc" "tikin-config behavior tests pass"
+  [ "$unittest_rc" -eq 0 ] || printf '%s\n' "$unittest_out" | tail -20
+fi
 
 # 7. Every operational skill carries the routing gate, and none curls a supported source page.
 runtime_gate_count="$(grep -l '^## Runtime gate$' skills/*/SKILL.md | wc -l | tr -d ' ')"

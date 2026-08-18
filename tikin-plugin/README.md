@@ -25,8 +25,18 @@ the key safely, setup falls back to a hidden local input instead of exposing it 
 
 The skills are self-contained [Agent Skills](https://agentskills.io) folders (the endpoint-search
 tool ships inside the `tikin-endpoint-discovery` skill), so any compatible agent can use them.
-Runtime requirements are just `curl` (tikin API and final media calls) and `python3` (the bundled
-configuration and endpoint-search helpers) — no SDK, package install, or build step.
+There is no SDK to add and no build step. Runtime requirements differ by skill:
+
+- **The 15 documentation-only skills** need just `curl` — for tikin API calls and the final media
+  download.
+- **The two skills that ship a CLI** — `tikin-setup` (`scripts/tikin-config`) and
+  `tikin-endpoint-discovery` (`scripts/tikin-find-endpoint`) — additionally need
+  [`uv`](https://docs.astral.sh/uv/) **0.8 or newer**. Each is a pinned uv project
+  (`pyproject.toml` + `uv.lock` + `.python-version`), and the CLI re-executes itself on that
+  project's own `.venv`. The **first** run builds that `.venv` and needs network access; every run
+  afterwards is offline. Both CLIs are standard-library only — the pinned interpreter, not any
+  third-party dependency, is what the project file exists for. Without `uv` they stop with an
+  install command instead of silently running on some other interpreter.
 
 ### Any agent — skills CLI
 

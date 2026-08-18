@@ -1,0 +1,9 @@
+[project]
+name = "tikin-setup"
+version = "0.2.1"
+description = "Local configuration helper for the tikin plugin. Standard library only; the pinned interpreter is the point of this project file."
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.uv]
+package = false
