@@ -1,7 +1,7 @@
 {
   "name": "brain-hands",
   "displayName": "Brain-Hands",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Brain/hands split for Claude Code: your smartest (most expensive) model plans, decomposes and reviews as the brain; implementation work is dispatched to the cheaper 'hands' executor subagent.",
   "author": {
     "name": "cookaihq"
