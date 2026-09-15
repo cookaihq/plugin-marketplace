@@ -4,6 +4,18 @@ All notable changes to the tikin plugin are documented here.
 
 ## Unreleased
 
+## 0.3.0
+
+- Added per-Skill project configuration: process environment → `.env.<skill-name>` →
+  `.env.local` → `.env` → the existing tikin home configuration. Values resolve independently,
+  empty values fall through, and project files are read only in the invocation directory.
+- Replaced shell sourcing in all operational Skills with the bundled `tikin-config --skill
+  <name> run -- <command>` helper. Dotenv files contain literal values; credentials are passed
+  to the child command without being printed. API workflows use the existing `tikin-setup`
+  uv runtime, with no new Python dependencies.
+- `status` and `validate` now use the same selected Skill configuration as API commands.
+  Existing home fallback, routing preferences, and authentication behavior remain available.
+
 ## 0.2.1
 
 - Gave every documented `curl` call an explicit time limit: `--max-time 30` for JSON reads and

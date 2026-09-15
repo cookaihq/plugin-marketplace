@@ -1,7 +1,7 @@
 ---
 name: tikin-competitor-analysis
-version: 0.2.1
-description: v0.2.1｜Benchmark multiple social-media accounts via tikin — followers, engagement rate, posting cadence, top content, and growth signals. Use when the user asks to compare accounts or supplies supported profile URLs for a competitive analysis.
+version: 0.3.0
+description: v0.3.0｜Benchmark multiple social-media accounts via tikin — followers, engagement rate, posting cadence, top content, and growth signals. Use when the user asks to compare accounts or supplies supported profile URLs for a competitive analysis.
 ---
 
 # Competitor Analysis
@@ -27,14 +27,20 @@ without blocking this task. Before the first tikin API call for the current user
 5. Resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Set up and validate TIKIN_API_KEY first (see tikin-setup)."
-  exit 1
-fi
-BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-competitor-analysis run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-competitor-analysis` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 If the key is missing or invalid, invoke `tikin-setup`. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.
@@ -53,7 +59,7 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 
 Cost ≈ (1 profile + N post-pages) × number of accounts. Multiply it out and state the total before
 running. Check balance/usage with
-`curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"`.
+`tikin_run sh -c 'BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"; curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"'`.
 
 **Budget both dimensions.** With user-stated numbers, those are the budget; with no target, the
 defaults are **10 accounts and 5 post-pages per account**, inside the overall 50-page / 5,000-item

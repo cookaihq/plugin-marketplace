@@ -1,7 +1,7 @@
 ---
 name: tikin-social-media-downloader
-version: 0.2.1
-description: v0.2.1｜Download video, audio, or images (no-watermark where available) from a social-media URL or list of URLs. Use when the user pastes a TikTok/Douyin/Instagram/YouTube/Twitter/Xiaohongshu link and wants the media file, or says "download this video", "save without watermark", "grab the audio". Dispatches to the right per-platform tikin endpoint.
+version: 0.3.0
+description: v0.3.0｜Download video, audio, or images (no-watermark where available) from a social-media URL or list of URLs. Use when the user pastes a TikTok/Douyin/Instagram/YouTube/Twitter/Xiaohongshu link and wants the media file, or says "download this video", "save without watermark", "grab the audio". Dispatches to the right per-platform tikin endpoint.
 ---
 
 # Social Media Downloader
@@ -28,14 +28,20 @@ without blocking this task. Before the first tikin API call for the current user
 5. Resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Set up and validate TIKIN_API_KEY first (see tikin-setup)."
-  exit 1
-fi
-BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-social-media-downloader run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-social-media-downloader` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 If the key is missing or invalid, invoke `tikin-setup`. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.
@@ -59,6 +65,8 @@ id. For the others, pull the id/code from the URL (or resolve it via the platfor
 ## Step 2 — Call the endpoint
 
 ```bash
+tikin_run sh <<'TIKIN_COMMAND'
+BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 # TikTok by share URL (simplest — pass the URL straight through).
 # curl's own --data-urlencode does the escaping; -G turns the encoded pairs into the query string,
 # so no helper interpreter is involved.
@@ -70,6 +78,7 @@ curl -s --max-time 30 -G "$BASE/api/v1/tiktok/app/v3/fetch_one_video_by_share_ur
 # YouTube streams
 curl -s --max-time 30 "$BASE/api/v1/youtube/web_v2/get_video_streams_v2?video_id=dQw4w9WgXcQ" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -o /tmp/media.json
+TIKIN_COMMAND
 ```
 
 Timeouts, which failures to retry (and which never to): follow the **Reliability** section in

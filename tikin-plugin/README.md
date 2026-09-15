@@ -23,12 +23,13 @@ the key safely, setup falls back to a hidden local input instead of exposing it 
 
 ## Install
 
-The skills are self-contained [Agent Skills](https://agentskills.io) folders (the endpoint-search
-tool ships inside the `tikin-endpoint-discovery` skill), so any compatible agent can use them.
-There is no SDK to add and no build step. Runtime requirements differ by skill:
+The plugin bundles [Agent Skills](https://agentskills.io) folders, so any compatible agent can
+use them. Install `tikin-setup` together with the operational skills: its configuration helper
+loads credentials for their API commands. The endpoint-search tool remains inside
+`tikin-endpoint-discovery`. There is no SDK to add and no build step.
 
-- **The 15 documentation-only skills** need just `curl` — for tikin API calls and the final media
-  download.
+- **Every API workflow** needs `curl` and the installed `tikin-setup` helper. The helper injects
+  the owning Skill's resolved configuration into each API command without printing secrets.
 - **The two skills that ship a CLI** — `tikin-setup` (`scripts/tikin-config`) and
   `tikin-endpoint-discovery` (`scripts/tikin-find-endpoint`) — additionally need
   [`uv`](https://docs.astral.sh/uv/) **0.8 or newer**. Each is a pinned uv project
@@ -100,8 +101,21 @@ tikin keeps credentials and behavior settings separate. Both paths honor `XDG_CO
 | `~/.config/tikin/.env` | Secrets such as `TIKIN_API_KEY`, plus `TIKIN_BASE_URL` when needed |
 | `~/.config/tikin/settings.json` | Non-secret routing behavior |
 
-An existing process environment variable takes precedence over the dotenv file. The default
-routing configuration is:
+For `TIKIN_API_KEY` and `TIKIN_BASE_URL`, each Skill uses the first nonempty value from:
+
+1. The process environment.
+2. `$PWD/.env.<skill-name>`, using the exact `name` in that Skill's `SKILL.md`.
+3. `$PWD/.env.local`.
+4. `$PWD/.env`.
+5. The existing `~/.config/tikin/.env` fallback, honoring `XDG_CONFIG_HOME`.
+
+For example, `tikin-douyin` reads `.env.tikin-douyin`; it does not read `.env.tikin-tiktok`.
+Project files are read only in the command's working directory, without parent-directory
+search. Dotenv contents are parsed as literal values, never executed as shell code. The
+`tikin-config --skill <skill-name> run -- <command>` helper passes resolved configuration only
+to the child command. Configuration loading does not write or move credential files.
+
+The default routing configuration is:
 
 ```json
 {
@@ -139,7 +153,7 @@ Example: confirm before Xiaohongshu requests while other supported platforms rem
 
 tikin exposes a single **REST API** at `https://console.tikin.net`. You call it with your tikin
 API key; tikin authenticates, meters usage (per-call, prepaid balance), and returns the data. One
-key, one base URL, standard HTTP — no SDK or extra runtime required.
+key, one base URL, standard HTTP — no SDK required.
 
 | Path | Owned by skill |
 |------|----------------|
@@ -202,7 +216,9 @@ You: What's trending on TikTok in the US right now?
 - tikin bills per API call against your prepaid balance. Task skills warn before large pulls and
   cap pagination. Check your balance/usage anytime:
   ```bash
-  curl "https://console.tikin.net/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
+  uv run --project <tikin-setup-dir> <tikin-setup-dir>/scripts/tikin-config \
+    --skill tikin-rest-api run -- sh -c \
+    'curl -s --max-time 30 "${TIKIN_BASE_URL}/api/usage/token/" -H "Authorization: Bearer ${TIKIN_API_KEY}"'
   ```
 - Override the base URL with `TIKIN_BASE_URL` if you use a private deployment.
 

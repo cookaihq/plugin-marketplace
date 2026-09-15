@@ -1,7 +1,7 @@
 ---
 name: tikin-trend-research
-version: 0.2.1
-description: v0.2.1｜Discover trends via tikin — viral content, rising hashtags, hot sounds, and ranking boards across supported platforms. Use when the user asks what is trending, wants a regional or niche trend report, or provides a supported URL as trend context.
+version: 0.3.0
+description: v0.3.0｜Discover trends via tikin — viral content, rising hashtags, hot sounds, and ranking boards across supported platforms. Use when the user asks what is trending, wants a regional or niche trend report, or provides a supported URL as trend context.
 ---
 
 # Trend Research
@@ -27,14 +27,20 @@ without blocking this task. Before the first tikin API call for the current user
 5. Resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Set up and validate TIKIN_API_KEY first (see tikin-setup)."
-  exit 1
-fi
-BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-trend-research run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-trend-research` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 If the key is missing or invalid, invoke `tikin-setup`. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.

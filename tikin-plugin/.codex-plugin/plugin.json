@@ -1,6 +1,6 @@
 {
   "name": "tikin-plugin",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Social-media data for AI agents via tikin. Download media and fetch posts, profiles, comments, search results, trends, and analytics across TikTok, Douyin, Instagram, YouTube, Twitter/X, Threads, Xiaohongshu, and more through tikin's unified REST API using your own tikin API key. Includes setup and authentication routing, REST best practices, endpoint discovery across 1,000+ API endpoints, platform-specific skills, and task skills for downloads, analytics, research, listening, comparison, comment analysis, and bulk export.",
   "author": {
     "name": "cookaihq",

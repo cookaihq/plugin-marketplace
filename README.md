@@ -25,5 +25,5 @@ Each plugin's own README documents its behaviour, configuration and update path.
 | 目标 | 版本 | Release |
 |---|---|---|
 | brain-hands | 0.1.3 | [brain-hands/v0.1.3](https://github.com/cookaihq/plugin-marketplace/releases/tag/brain-hands%2Fv0.1.3) |
-| tikin-plugin | 0.2.1 | [tikin-plugin/v0.2.1](https://github.com/cookaihq/plugin-marketplace/releases/tag/tikin-plugin%2Fv0.2.1) |
+| tikin-plugin | 0.3.0 | [tikin-plugin/v0.3.0](https://github.com/cookaihq/plugin-marketplace/releases/tag/tikin-plugin%2Fv0.3.0) |
 <!-- release-table:end -->

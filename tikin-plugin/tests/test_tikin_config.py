@@ -2,6 +2,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -97,6 +98,119 @@ class TikinConfigTests(unittest.TestCase):
                 f"command failed ({result.returncode}): {result.stderr or result.stdout}"
             )
         return result
+
+    def test_each_skill_reads_its_own_file_before_shared_and_home_values(self):
+        project = Path(self.tempdir.name)
+        config_dir = self.xdg_home / "tikin"
+        config_dir.mkdir(parents=True)
+        (config_dir / ".env").write_text("TIKIN_API_KEY=home-value\n")
+        (project / ".env.local").write_text("TIKIN_API_KEY=local-value\n")
+        (project / ".env").write_text("TIKIN_API_KEY=shared-value\n")
+        names = [path.parent.name for path in (ROOT / "skills").glob("*/SKILL.md")]
+        for name in names:
+            (project / (".env." + name)).write_text("TIKIN_API_KEY=for-" + name + "\n")
+        for name in names:
+            with self.subTest(skill=name):
+                result = self.run_config("--skill", name, "status")
+                self.assertEqual(json.loads(result.stdout)["key_source"], ".env." + name)
+                child = self.run_config(
+                    "--skill", name, "run", "--", INTERPRETER, "-c",
+                    "import os,sys; sys.exit(os.environ['TIKIN_API_KEY'] != sys.argv[1])",
+                    "for-" + name,
+                )
+                self.assertEqual(child.stdout, "")
+                self.assertNotIn("for-" + name, child.stderr)
+
+    def test_process_wins_and_empty_layers_fall_through_without_shell_expansion(self):
+        project = Path(self.tempdir.name)
+        skill_file = project / ".env.tikin-douyin"
+        skill_file.write_text("TIKIN_API_KEY=skill-value\n")
+        local = project / ".env.local"
+        local.write_text("TIKIN_API_KEY=local-value\n")
+        (project / ".env").write_text("TIKIN_API_KEY=shared-value\n")
+        env = self.env.copy()
+        env["TIKIN_API_KEY"] = "process-value"
+        self.assertEqual(
+            json.loads(self.run_config("--skill", "tikin-douyin", "status", env=env).stdout)["key_source"],
+            "environment",
+        )
+        env["TIKIN_API_KEY"] = ""
+        skill_file.write_text('TIKIN_API_KEY=first\nTIKIN_API_KEY=""\n')
+        self.assertEqual(
+            json.loads(self.run_config("--skill", "tikin-douyin", "status", env=env).stdout)["key_source"],
+            ".env.local",
+        )
+        local.write_text("TIKIN_API_KEY=\n")
+        self.assertEqual(
+            json.loads(self.run_config("--skill", "tikin-douyin", "status", env=env).stdout)["key_source"],
+            ".env",
+        )
+        literal = "${MISSING}/$(touch should-not-exist)`touch neither`"
+        skill_file.write_text('TIKIN_API_KEY = "' + literal + '"\nUNSUPPORTED=ignored\n')
+        child = self.run_config(
+            "--skill", "tikin-douyin", "run", "--", INTERPRETER, "-c",
+            "import os,sys; assert os.environ['TIKIN_API_KEY'] == sys.argv[1]; "
+            "assert 'UNSUPPORTED' not in os.environ", literal,
+        )
+        self.assertEqual(child.stdout, "")
+        self.assertFalse((project / "should-not-exist").exists())
+        self.assertFalse((project / "neither").exists())
+
+    def test_project_lookup_does_not_read_parent_or_other_skill_file(self):
+        project = Path(self.tempdir.name)
+        (project / ".env.tikin-tiktok").write_text("TIKIN_API_KEY=other-skill\n")
+        result = self.run_config("--skill", "tikin-douyin", "status")
+        self.assertEqual(json.loads(result.stdout)["key_source"], "missing")
+        for name in (".env.tikin-douyin", ".env.local", ".env"):
+            (project / name).write_text("TIKIN_API_KEY=parent-value\n")
+        child_dir = project / "child"
+        child_dir.mkdir()
+        result = subprocess.run(
+            [INTERPRETER, str(SCRIPT), "--skill", "tikin-douyin", "status"],
+            cwd=child_dir, env=self.env, text=True, capture_output=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["key_source"], "missing")
+
+    def test_run_uses_independent_values_and_does_not_initialize_home(self):
+        project = Path(self.tempdir.name)
+        (project / ".env.tikin-setup").write_text("TIKIN_API_KEY=project-value\n")
+        (project / ".env.local").write_text("TIKIN_BASE_URL=https://selected.example\n")
+        result = self.run_config(
+            "run", "--", INTERPRETER, "-c",
+            "import os; assert os.environ['TIKIN_API_KEY'] == 'project-value'; "
+            "assert os.environ['TIKIN_BASE_URL'] == 'https://selected.example'",
+        )
+        self.assertEqual(result.stdout, "")
+        self.assertFalse(self.xdg_home.exists())
+
+    def test_run_rejects_missing_key_and_invalid_skill_before_child_execution(self):
+        for args in (("run", "--", INTERPRETER, "-c", "raise AssertionError('executed')"),
+                     ("--skill", "../../other", "run", "--", INTERPRETER, "-c", "raise AssertionError('executed')")):
+            result = self.run_config(*args, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("executed", result.stderr)
+
+    def test_set_key_preserves_literal_quotes_and_whitespace(self):
+        value = '  quoted\'"key  '
+        self.run_config("set-key", input_text=value)
+        result = self.run_config(
+            "run", "--", INTERPRETER, "-c",
+            "import os,sys; assert os.environ['TIKIN_API_KEY'] == sys.argv[1]", value,
+        )
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn(value, result.stderr)
+
+    def test_plugin_skill_and_runtime_versions_are_consistent(self):
+        version = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["version"]
+        self.assertEqual(json.loads((ROOT / ".codex-plugin/plugin.json").read_text())["version"], version)
+        for skill in (ROOT / "skills").glob("*/SKILL.md"):
+            text = skill.read_text()
+            self.assertEqual(re.search(r'^version: (\S+)', text, re.M).group(1), version)
+            self.assertIn("v" + version + "｜", text)
+            if (skill.parent / "pyproject.toml").exists():
+                for filename in ("pyproject.toml", "uv.lock"):
+                    self.assertIn('version = "' + version + '"', (skill.parent / filename).read_text())
 
     def test_init_creates_default_settings_with_private_permissions(self):
         self.run_config("init")
@@ -336,11 +450,14 @@ class TikinConfigTests(unittest.TestCase):
         config_dir = self.xdg_home / "tikin"
         config_dir.mkdir(parents=True)
         (config_dir / ".env").write_text(
-            f"TIKIN_API_KEY={secret}\n"
+            "TIKIN_API_KEY=wrong-home-key\n"
             f"TIKIN_BASE_URL=http://127.0.0.1:{server.server_port}\n"
         )
+        (Path(self.tempdir.name) / ".env.tikin-douyin").write_text(
+            f"TIKIN_API_KEY={secret}\n"
+        )
 
-        result = self.run_config("validate")
+        result = self.run_config("--skill", "tikin-douyin", "validate")
 
         self.assertEqual(result.stdout.strip(), "valid")
         self.assertNotIn(secret, result.stdout)

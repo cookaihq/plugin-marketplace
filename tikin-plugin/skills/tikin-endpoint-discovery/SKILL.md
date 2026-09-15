@@ -1,7 +1,7 @@
 ---
 name: tikin-endpoint-discovery
-version: 0.2.1
-description: v0.2.1｜Find the right tikin endpoint among 1,000+ across 16+ platforms. Use when you know the goal (e.g. "get a user's posts on Douyin") but not the exact API path, or when a platform has no dedicated skill (LinkedIn, Reddit, Bilibili, Weibo, WeChat, Kuaishou, Zhihu, Lemon8, etc.). Searches a bundled index and maps results to REST calls.
+version: 0.3.0
+description: v0.3.0｜Find the right tikin endpoint among 1,000+ across 16+ platforms. Use when you know the goal (e.g. "get a user's posts on Douyin") but not the exact API path, or when a platform has no dedicated skill (LinkedIn, Reddit, Bilibili, Weibo, WeChat, Kuaishou, Zhihu, Lemon8, etc.). Searches a bundled index and maps results to REST calls.
 ---
 
 # tikin — Endpoint Discovery
@@ -23,13 +23,20 @@ browser fetch. Parse identifiers locally or pass the original URL/share text to 
 endpoint. Before calling an endpoint, resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Index search works without a key; calling an endpoint requires tikin-setup."
-  exit 1
-fi
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-endpoint-discovery run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-endpoint-discovery` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 Calls to the configured tikin base URL are allowed. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.
@@ -74,9 +81,11 @@ ships with the skill, and is refreshed on new releases when the API surface chan
 Given `GET /api/v1/{platform}/{api}/{action}`, call it via REST (see `tikin-rest-api`):
 
 ```bash
+tikin_run sh <<'TIKIN_COMMAND'
 BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 curl -s --max-time 30 "$BASE/api/v1/tiktok/app/v3/fetch_one_video?aweme_id=..." \
   -H "Authorization: Bearer $TIKIN_API_KEY"
+TIKIN_COMMAND
 ```
 
 Timeouts, which failures to retry (and which never to), and pagination budgets: follow the

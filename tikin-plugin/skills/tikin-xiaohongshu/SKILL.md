@@ -1,7 +1,7 @@
 ---
 name: tikin-xiaohongshu
-version: 0.2.1
-description: v0.2.1｜Work with Xiaohongshu / RedNote (小红书) URLs and data via tikin — fetch image and video note details, user info and posted notes, search notes/users/products/images, and pull note comments and sub-comments. Use when the user provides a Xiaohongshu URL/share text or the task targets Xiaohongshu. Covers the Xiaohongshu App-V2 API.
+version: 0.3.0
+description: v0.3.0｜Work with Xiaohongshu / RedNote (小红书) URLs and data via tikin — fetch image and video note details, user info and posted notes, search notes/users/products/images, and pull note comments and sub-comments. Use when the user provides a Xiaohongshu URL/share text or the task targets Xiaohongshu. Covers the Xiaohongshu App-V2 API.
 ---
 
 # Xiaohongshu / RedNote / 小红书 (via tikin)
@@ -28,14 +28,20 @@ without blocking this task. Before the first tikin API call for the current user
 5. Resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Set up and validate TIKIN_API_KEY first (see tikin-setup)."
-  exit 1
-fi
-BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-xiaohongshu run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-xiaohongshu` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 If the key is missing or invalid, invoke `tikin-setup`. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.
@@ -60,8 +66,11 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
+tikin_run sh <<'TIKIN_COMMAND'
+BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 curl -s --max-time 30 "$BASE/api/v1/xiaohongshu/app_v2/search_notes?keyword=护肤&page=1&sort_type=general" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
+TIKIN_COMMAND
 ```
 
 ## Pagination

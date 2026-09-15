@@ -1,7 +1,7 @@
 ---
 name: tikin-rest-api
-version: 0.2.1
-description: v0.2.1｜Call the tikin REST API directly with curl/HTTP. Covers base URL, Bearer auth, the /api/v1/{platform}/... path scheme, pagination, rate limits, retries, error handling, and per-call cost/balance awareness. Use for any direct data call against tikin.
+version: 0.3.0
+description: v0.3.0｜Call the tikin REST API directly with curl/HTTP. Covers base URL, Bearer auth, the /api/v1/{platform}/... path scheme, pagination, rate limits, retries, error handling, and per-call cost/balance awareness. Use for any direct data call against tikin.
 ---
 
 # tikin — REST API
@@ -28,14 +28,20 @@ without blocking this task. Before the first tikin API call for the current user
 5. Resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Set up and validate TIKIN_API_KEY first (see tikin-setup)."
-  exit 1
-fi
-BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-rest-api run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-rest-api` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 If the key is missing or invalid, invoke `tikin-setup`. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.
@@ -50,6 +56,7 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Action — example calls
 
 ```bash
+tikin_run sh <<'TIKIN_COMMAND'
 BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 
 # TikTok: one video by id
@@ -69,6 +76,7 @@ curl -s --max-time 30 -X POST "$BASE/api/v1/douyin/search/fetch_general_search_v
 curl -s --max-time 30 -X POST "$BASE/api/v1/tiktok/app/v3/fetch_multi_video" \
   -H "Authorization: Bearer $TIKIN_API_KEY" -H "Content-Type: application/json" \
   -d '["7372484719365098283","7372484719365098284"]'
+TIKIN_COMMAND
 ```
 
 Every call carries `--max-time` — see [Reliability](#reliability) for the values and for what to do
@@ -144,7 +152,10 @@ it is correct.
 tikin bills per call against your prepaid balance. Check balance/usage anytime:
 
 ```bash
+tikin_run sh <<'TIKIN_COMMAND'
+BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 curl -s --max-time 30 "$BASE/api/usage/token/" -H "Authorization: Bearer $TIKIN_API_KEY"
+TIKIN_COMMAND
 ```
 
 Prices vary per endpoint. Cap pagination and estimate a run's cost (pages × per-call price)

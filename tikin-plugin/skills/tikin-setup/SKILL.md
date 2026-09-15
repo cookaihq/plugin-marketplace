@@ -1,7 +1,7 @@
 ---
 name: tikin-setup
-version: 0.2.1
-description: v0.2.1｜Install, update, and configure tikin social-media skills or plugins. Use when the user first mentions tikin, needs to install or repair the tikin package, has a missing or invalid TIKIN_API_KEY, wants browser-assisted API-key creation, or wants to change per-platform auto/confirm routing settings.
+version: 0.3.0
+description: v0.3.0｜Install, update, and configure tikin social-media skills or plugins. Use when the user first mentions tikin, needs to install or repair the tikin package, has a missing or invalid TIKIN_API_KEY, wants browser-assisted API-key creation, or wants to change per-platform auto/confirm routing settings.
 ---
 
 # tikin Setup
@@ -33,9 +33,31 @@ The helper honors `XDG_CONFIG_HOME` and defaults to:
 - `~/.config/tikin/.env` for `TIKIN_API_KEY` and optional `TIKIN_BASE_URL`.
 - `~/.config/tikin/settings.json` for non-secret routing preferences.
 
-The process environment wins over `.env`. `init` migrates the legacy unhidden dotenv file only
-when `.env` does not already exist. Never expose a key in chat, tool output, logs, source files,
-or commits.
+Configuration resolves each supported variable independently from process environment →
+`$PWD/.env.tikin-setup` → `$PWD/.env.local` → `$PWD/.env` → the existing home `.env`
+fallback above. Empty values fall through. Only the invocation directory is searched; other
+Skills' files and parent directories are not read. Values support optional matching outer
+quotes, but no shell expansion, command substitution, or inline comments. Only `TIKIN_API_KEY`
+and `TIKIN_BASE_URL` are accepted from these files.
+
+When helping another Skill, pass its actual `SKILL.md` name before `status`, `validate`, or
+`run`, for example `--skill tikin-douyin validate`. This makes validation use the same
+`$PWD/.env.tikin-douyin` as that Skill's API requests. Without `--skill`, this helper owns
+`tikin-setup` configuration. `init` migrates the legacy unhidden dotenv file only when the
+home `.env` does not already exist. Never expose a key in chat, tool output, logs, source
+files, or commits.
+
+Run API commands with the selected configuration in a child process:
+
+```bash
+uv run --project <this-skill-dir> <this-skill-dir>/scripts/tikin-config \
+  --skill tikin-setup run -- sh -c \
+  'curl -s --max-time 30 "${TIKIN_BASE_URL}/api/usage/token/" -H "Authorization: Bearer ${TIKIN_API_KEY}"'
+```
+
+`run` requires a nonempty API key, reads configuration without writing files, and passes
+only supported resolved values to the child environment. It never prints or shell-sources
+the configuration. Keep shell programs quoted so variable expansion happens inside that child.
 
 ## Install or repair
 
@@ -124,8 +146,8 @@ If validation succeeds, continue. If the key is missing or invalid:
    non-echoing stdin prompt. Do not ask the user to paste it into chat.
 8. Run `validate` again. Report only whether validation passed, not the key or response body.
 
-If an invalid key comes from the process environment, explain that it overrides `.env`; do not
-silently write a different file value that will remain shadowed.
+If an invalid key comes from the process environment or a project file, use `status` to identify
+that source; do not silently write a home key that the higher-priority value will override.
 
 ## Configure routing
 

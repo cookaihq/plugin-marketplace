@@ -1,7 +1,7 @@
 ---
 name: tikin-tiktok
-version: 0.2.1
-description: v0.2.1｜Work with TikTok URLs and data via tikin — fetch videos, user profiles and post lists, run search, pull trends/ads insights, creator analytics, comment keywords, and shop search. Use when the user provides a TikTok URL or the task targets TikTok. Covers the App-V3, Ads, Creator, Analytics, and Shop APIs.
+version: 0.3.0
+description: v0.3.0｜Work with TikTok URLs and data via tikin — fetch videos, user profiles and post lists, run search, pull trends/ads insights, creator analytics, comment keywords, and shop search. Use when the user provides a TikTok URL or the task targets TikTok. Covers the App-V3, Ads, Creator, Analytics, and Shop APIs.
 ---
 
 # TikTok (via tikin)
@@ -29,14 +29,20 @@ without blocking this task. Before the first tikin API call for the current user
 5. Resolve and require the key:
 
 ```bash
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env"
-if [ -z "${TIKIN_API_KEY:-}" ] && [ -f "$CONFIG" ]; then set -a; . "$CONFIG"; set +a; fi
-if [ -z "${TIKIN_API_KEY:-}" ]; then
-  echo "Set up and validate TIKIN_API_KEY first (see tikin-setup)."
-  exit 1
-fi
-BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
+TIKIN_SETUP_DIR="<installed tikin-setup directory>"
+tikin_run() {
+  uv run --project "${TIKIN_SETUP_DIR}" "${TIKIN_SETUP_DIR}/scripts/tikin-config" \
+    --skill tikin-tiktok run -- "$@"
+}
 ```
+
+Resolve `TIKIN_SETUP_DIR` from the installed `tikin-setup` Skill before using the command.
+Run API examples through `tikin_run` in the same shell as this definition. The helper reads
+`TIKIN_API_KEY` and `TIKIN_BASE_URL` independently from process environment →
+`$PWD/.env.tikin-tiktok` → `$PWD/.env.local` → `$PWD/.env` → the existing
+`${XDG_CONFIG_HOME:-$HOME/.config}/tikin/.env` fallback. Empty values fall through. Project files are read only in the
+invocation directory; other Skills' dedicated files are not read. File contents are literal, never
+sourced as shell code. Resolved values are passed only to the child command and are not printed.
 
 If the key is missing or invalid, invoke `tikin-setup`. If the user declines tikin, explain the
 limitation and ask before selecting an alternative; do not silently fetch the original page.
@@ -67,8 +73,11 @@ limitation and ask before selecting an alternative; do not silently fetch the or
 ## Example
 
 ```bash
+tikin_run sh <<'TIKIN_COMMAND'
+BASE="${TIKIN_BASE_URL:-https://console.tikin.net}"
 curl -s --max-time 30 "$BASE/api/v1/tiktok/app/v3/fetch_user_post_videos?sec_user_id=SEC_UID&count=20&max_cursor=0" \
   -H "Authorization: Bearer $TIKIN_API_KEY"
+TIKIN_COMMAND
 ```
 
 ## Pagination
