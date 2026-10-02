@@ -1,24 +1,39 @@
 import { readFile } from 'node:fs/promises';
-import { loadConfig, redact, sanitized } from './config.js';
+import { loadConfig, inspectConfig, ConfigurationError, redact, sanitized, RESULT_CHECK_DEFAULTS } from './config.js';
 import { checkMediaTools } from './download.js';
 import { models, describe } from './models.js';
-import { AihubmaxClient } from './apiClient.js';
+import { AihubmaxClient, ApiError } from './apiClient.js';
 import { generate, resume, adoptTask, upload, understand, nativeMusic, TaskPersistenceError } from './workflow.js';
+import { selectionPlan } from './selection.js';
+import { startRun, continueRun } from './runs.js';
+import { collectRequestErrors, feedback } from './diagnostics.js';
+import { reviewTask, DISABLE_CHECK_HINT } from './review.js';
 const SKILLS = ['aihub-image', 'aihub-video', 'aihub-audio', 'aihub-music', 'aihub-understanding', 'aihub-document'];
 const FLAGS = {
-    doctor: [], models: ['media', 'keyword'], describe: ['model'],
+    doctor: [], 'config-check': [], models: ['media', 'keyword'], describe: ['model'],
     generate: ['media', 'model', 'params-file', 'output-dir', 'wait-seconds'],
     understand: ['model', 'params-file', 'output-dir', 'wait-seconds'],
     'native-music': ['model', 'params-file', 'output-dir'],
     music: ['model', 'params-file', 'output-dir'],
     resume: ['record', 'wait-seconds'], task: ['task-id', 'media', 'output-dir', 'wait-seconds'],
     upload: ['input-file'],
+    plan: ['request-file'],
+    run: ['request-file', 'output-dir', 'wait-seconds'],
+    continue: ['record', 'confirm', 'wait-seconds'],
+    review: ['record', 'provider', 'wait-seconds', 'recheck'],
+    'review-submit': ['record', 'review-file', 'review-token'],
 };
 const HELP = `AIhub media Plugin CLI
 Usage: node <plugin>/scripts/aihub.mjs COMMAND --skill NAME [options]
 Skills: ${SKILLS.join(', ')}
 Commands:
+  config-check (local configuration sources; no network or media tools)
   doctor
+  plan --request-file JSON
+  run --request-file JSON [--output-dir DIR] [--wait-seconds 0..600]
+  continue --record run.json [--confirm TOKEN] [--wait-seconds 0..600]
+  review --record run.json [--provider host|aihub] [--wait-seconds 0..600] [--recheck]
+  review-submit --record run.json --review-file JSON --review-token TOKEN
   models [--media image|video|audio|document|understanding] [--keyword TEXT]
   describe --model ID
   generate --media TYPE --model ID --params-file JSON --output-dir DIR [--wait-seconds 0..600]
@@ -33,8 +48,21 @@ Configuration: process environment > project .env.<skill-name> > .env.local > .e
   > standalone ~/.config/<skill-name>/.env (only fills missing or empty fields).
 Use --no-global-config to skip both global directories; --use-global-config remains a compatible no-op.
 Do not combine --no-global-config with --use-global-config. Only the current Skill's standalone .env is read.
-JSON output; exit 0 = success or known running task, 1 = definite failure, 2 = needs recovery.
+JSON output; exit 0 = success or known running task, 1 = definite failure, 2 = needs recovery,
+3 = config-check found missing, invalid or unreadable configuration.
 generate defaults to no waiting; resume/task default to 30 seconds. Resume never creates a task.
+run defaults to data/aihub/ and no waiting. continue resumes the saved plan and may submit
+the next compatible model under its saved fallback policy. --confirm is only for a user's
+explicit approval of the pending model and parameters. plan performs no network requests.
+Optional model configuration: AIHUB_<IMAGE|VIDEO|AUDIO|MUSIC|UNDERSTANDING|DOCUMENT>_MODELS
+(ordered comma-separated exact IDs), AIHUB_MODEL_FALLBACK_POLICY=auto|confirm|off|preflight_only,
+AIHUB_MODEL_MAX_ATTEMPTS (positive integer, includes first model). Only AIHUB_API_KEY is required.
+Result checks: AIHUB_RESULT_CHECK_ENABLED=1|0 (default 1), AIHUB_RESULT_CHECK_PROVIDER=auto|host|aihub
+(default auto: the Skill uses actual host media tools first), AIHUB_RESULT_CHECK_MODELS
+(ordered IDs; default gemini-3.8-flash; preflight selection only, one external review submission).
+Feedback: AIHUB_ERROR_REPORT_THRESHOLD (positive integer, default 3), AIHUB_SUPPORT_URL (optional).
+Review failures never regenerate media. Completed checks include a reminder that users can
+disable checks through conversation. No Issue or administrator message is sent automatically.
 `;
 function parse(argv) {
     const command = argv[0];
@@ -48,7 +76,7 @@ function parse(argv) {
         const key = token.slice(2);
         if (![...FLAGS[command], 'skill', 'use-global-config', 'no-global-config'].includes(key) || key in flags)
             throw new Error(`Unknown or duplicate option: --${key}`);
-        if (key === 'use-global-config' || key === 'no-global-config')
+        if (key === 'use-global-config' || key === 'no-global-config' || key === 'recheck')
             flags[key] = true;
         else {
             const value = argv[++i];
@@ -85,6 +113,9 @@ async function jsonFile(path) {
     return data;
 }
 export async function main(argv) {
+    return collectRequestErrors(events => mainWithDiagnostics(argv, events));
+}
+async function mainWithDiagnostics(argv, events) {
     if (!argv.length || argv[0] === '--help' || argv[0] === 'help') {
         process.stdout.write(HELP);
         return 0;
@@ -99,16 +130,32 @@ export async function main(argv) {
         if (!SKILLS.includes(skill))
             throw new Error(`--skill must be one of ${SKILLS.join(', ')}.`);
         // describe reads only bundled data; it can run before credentials are configured.
-        if (command === 'describe')
+        if (command === 'config-check')
+            output = { ...inspectConfig({ skill, useGlobalConfig: flags['no-global-config'] !== true }) };
+        else if (command === 'describe')
             output = { schema_version: 1, ...describe(required(flags, 'model')) };
         else {
             cfg = loadConfig({ skill, useGlobalConfig: flags['no-global-config'] !== true });
             if (command === 'doctor') {
                 await checkMediaTools();
-                output = { schema_version: 1, status: 'ok', skill, node: process.version, media_tools: 'available', service_url: cfg.baseUrl, config_sources: cfg.sources, note: 'Local preflight only; key authentication and generation channel availability have not been tested.' };
+                output = { schema_version: 1, status: 'ok', skill, node: process.version, media_tools: 'available', service_url: cfg.baseUrl, config_sources: cfg.sources, model_selection: cfg.modelSelection,
+                    result_check: cfg.resultCheck, error_feedback: cfg.feedback, note: 'Local preflight only; key authentication and generation channel availability have not been tested.' };
+            }
+            else if (command === 'plan')
+                output = { schema_version: 1, status: 'ok', ...selectionPlan(cfg, await jsonFile(required(flags, 'request-file'))), model_selection: cfg.modelSelection };
+            else if (command === 'run')
+                output = await startRun(cfg, await jsonFile(required(flags, 'request-file')), typeof flags['output-dir'] === 'string' ? flags['output-dir'] : 'data/aihub', wait(flags, 0));
+            else if (command === 'continue')
+                output = await continueRun(cfg, required(flags, 'record'), wait(flags, 30), flags.confirm);
+            else if (command === 'review' || command === 'review-submit') {
+                if (flags.provider && !['host', 'aihub'].includes(String(flags.provider)))
+                    throw new Error('--provider must be host or aihub.');
+                output = await reviewTask(cfg, required(flags, 'record'), command === 'review-submit'
+                    ? { report: await jsonFile(required(flags, 'review-file')), reviewToken: required(flags, 'review-token') }
+                    : { provider: flags.provider, waitSeconds: wait(flags, 30), recheck: flags.recheck === true });
             }
             else if (command === 'models')
-                output = { schema_version: 1, ...await models(new AihubmaxClient(cfg), flags.media ? media(flags) : undefined, flags.keyword) };
+                output = { schema_version: 1, ...await models(new AihubmaxClient(cfg), flags.media ? media(flags) : undefined, flags.keyword), model_selection: cfg.modelSelection };
             else if (command === 'generate') {
                 const kind = media(flags);
                 if (skill !== `aihub-${kind}` && !(kind === 'audio' && (skill === 'aihub-music' || skill === 'aihub-audio')))
@@ -132,7 +179,7 @@ export async function main(argv) {
                 output = await resume(cfg, required(flags, 'record'), wait(flags, 30));
             else if (command === 'task') {
                 const kind = media(flags);
-                if (skill !== `aihub-${kind}`)
+                if (skill !== `aihub-${kind}` && !(kind === 'audio' && skill === 'aihub-music'))
                     throw new Error('--skill must match the requested media.');
                 output = await adoptTask(cfg, required(flags, 'task-id'), kind, required(flags, 'output-dir'), wait(flags, 30));
             }
@@ -143,19 +190,53 @@ export async function main(argv) {
             output = sanitized(output, [cfg.apiKey]);
     }
     catch (error) {
-        const recovering = parsed?.command === 'resume' || parsed?.command === 'task';
+        const recovering = ['resume', 'task', 'continue', 'review', 'review-submit'].includes(parsed?.command ?? '');
         output = error instanceof TaskPersistenceError ? error.output()
             : { schema_version: 1, status: recovering ? 'recovery_failed' : 'not_submitted',
                 ...(recovering && typeof parsed?.flags.record === 'string' ? { record: parsed.flags.record } : {}),
                 ...(recovering && typeof parsed?.flags['task-id'] === 'string' ? { task_id: parsed.flags['task-id'] } : {}),
                 error: redact(error instanceof Error ? error.message : String(error), cfg ? [cfg.apiKey] : []) };
+        if (error instanceof ConfigurationError)
+            output.configuration = error.inspection;
+        if (cfg && error instanceof ApiError)
+            output.failure = { http_status: error.status, ambiguous: error.ambiguous };
         if (cfg)
             output = sanitized(output, [cfg.apiKey]);
     }
+    if (cfg && output.status === 'delivered') {
+        const enabled = (cfg.resultCheck ?? RESULT_CHECK_DEFAULTS).enabled;
+        try {
+            output.result_check = typeof output.run_record === 'string'
+                ? await reviewTask(cfg, output.run_record)
+                : { status: enabled ? 'unavailable' : 'disabled', reason: '旧单任务记录没有保存用户原始需求，无法据此证明需求匹配。新任务请使用 plan/run。', ...(enabled ? { user_notice: DISABLE_CHECK_HINT } : {}) };
+        }
+        catch {
+            output.result_check = { status: enabled ? 'unavailable' : 'disabled', reason: '检查记录或文件绑定无法验证；生成文件仍可交付。', ...(enabled ? { user_notice: DISABLE_CHECK_HINT } : {}) };
+        }
+    }
+    if (cfg) {
+        try {
+            const diagnostic = await feedback(cfg, output, events);
+            if (diagnostic)
+                output.feedback = diagnostic;
+        }
+        catch {
+            output.feedback_warning = '无法保存错误报告；保留原任务结果与已知任务 ID。';
+        }
+        output = sanitized(output, [cfg.apiKey]);
+    }
+    const failure = output.failure ?? output.result?.failure;
+    if (cfg && failure?.http_status === 401) {
+        output.configuration_issue = { reason: 'authentication_rejected', http_status: 401,
+            keys: ['AIHUB_API_KEY', 'AIHUB_BASE_URL'], sources: cfg.sources,
+            next_step: 'Check the key and its service/account. Offer to edit the effective local file or use secret-book to repair it. Do not replay a business request automatically.' };
+    }
     process.stdout.write(JSON.stringify(output, null, 2) + '\n');
-    if (['ok', 'delivered', 'submitted', 'waiting'].includes(String(output.status)))
+    if (output.status === 'configuration_required')
+        return 3;
+    if (['ok', 'delivered', 'submitted', 'waiting', 'matched', 'mismatched', 'inconclusive', 'unavailable', 'disabled', 'pending', 'checking'].includes(String(output.status)))
         return 0;
-    if (['not_submitted', 'remote_failed'].includes(String(output.status)))
+    if (['not_submitted', 'remote_failed', 'failed', 'no_compatible_model', 'attempt_limit'].includes(String(output.status)))
         return 1;
     return 2;
 }

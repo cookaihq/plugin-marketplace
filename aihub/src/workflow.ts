@@ -10,6 +10,11 @@ import { assertOutsideInstallation, readJob, recordPath, withJobLock, writeJob, 
 function cleanError(error: unknown, cfg: LoadedConfig): string {
   return sanitized(error instanceof Error ? error.message : String(error), [cfg.apiKey]);
 }
+export function failureInfo(error: unknown, cfg: LoadedConfig) {
+  return sanitized(error instanceof ApiError ? { http_status: error.status, code: error.code,
+    type: error.type, request_id: error.requestId, ambiguous: error.ambiguous }
+    : { http_status: 0, ambiguous: true }, [cfg.apiKey]);
+}
 export class TaskPersistenceError extends Error {
   constructor(readonly job: Job, readonly record: string, message: string) {
     super(message);
@@ -73,6 +78,7 @@ export function result(job: Job, record: string, statusOverride?: string): Recor
     : sub.state === 'submitting' ? 'The process stopped before submission was confirmed. Do not resubmit automatically.' : sub.error;
   const metadata = sub.state === 'known' ? resultMetadata(sub.task) : undefined;
   return { schema_version: 1, status: statusOverride ?? status, record, media: job.media, model: job.model,
+    ...(job.failure ? { failure: job.failure } : {}),
     ...(sub.state === 'known' ? { task_id: sub.task.id, remote_status: sub.task.status, progress: sub.task.progress } : {}),
     ...(job.text !== undefined ? { text: job.text } : {}), files: job.files, failed: job.failed, ...(metadata ? { result_metadata: metadata } : {}), ...(error ? { error } : {}),
     ...(sub.state === 'known' && status !== 'remote_failed' && status !== 'delivered'
@@ -206,6 +212,7 @@ async function queryAndDeliver(client: AihubmaxClient, cfg: LoadedConfig, job: J
         })
       : await client.getTask(id);
     job.submission = { state: 'known', task: sanitized(task, [cfg.apiKey]) };
+    delete job.failure;
     if (task.model) job.model = task.model;
     if (job.media === 'understanding' && task.status === 'completed') job.text = extractText(task) ?? undefined;
     await save(record, job, cfg);
@@ -217,6 +224,7 @@ async function queryAndDeliver(client: AihubmaxClient, cfg: LoadedConfig, job: J
       return { ...result(job, record, 'waiting'), wait_result: 'budget_exhausted' };
     }
     job.last_error = cleanError(error, cfg);
+    job.failure = failureInfo(error, cfg);
     try { await save(record, job, cfg); } catch { /* Return the known task ID even if persistence fails. */ }
     return result(job, record, 'query_failed');
   }
@@ -230,7 +238,7 @@ async function queryAndDeliver(client: AihubmaxClient, cfg: LoadedConfig, job: J
   return result(job, record);
 }
 
-export async function generate(cfg: LoadedConfig, options: { media: Media; model: string; params: Record<string, unknown>; outputDir: string; waitSeconds: number }) {
+export async function generate(cfg: LoadedConfig, options: { media: Media; model: string; params: Record<string, unknown>; outputDir: string; waitSeconds: number; onRecord?: (record: string) => Promise<void> }) {
   const path = validateGeneration(options.media, options.model, options.params);
   assertOutsideInstallation(options.outputDir);
   if (options.media !== 'document') await checkMediaTools();
@@ -239,6 +247,7 @@ export async function generate(cfg: LoadedConfig, options: { media: Media; model
   if (!live.has(options.model)) throw new Error('The exact model ID is not present in the current key model list. Run models and use its unchanged ID. No generation was submitted.');
   const { job, record } = newJob(cfg, options.media, options.model, options.outputDir);
   await save(record, job, cfg);
+  await options.onRecord?.(record);
   process.stderr.write(`AIhub task record: ${record}\n`);
   return withJobLock(record, async () => {
     try {
@@ -251,6 +260,7 @@ export async function generate(cfg: LoadedConfig, options: { media: Media; model
         job.last_error = `Task accepted, but saving its ID failed: ${cleanError(error, cfg)}. Keep this task_id and use task to recover.`;
         return result(job, record, 'query_failed');
       }
+      job.failure = failureInfo(error, cfg);
       job.submission = { state: error instanceof ApiError && !error.ambiguous ? 'not_submitted' : 'submission_unknown', error: cleanError(error, cfg) };
       try { await save(record, job, cfg); } catch { /* Still return the submission outcome. */ }
       return result(job, record);
@@ -283,7 +293,7 @@ export async function adoptTask(cfg: LoadedConfig, id: string, media: Media, out
   const client = new AihubmaxClient(cfg);
   let task: TaskResponse;
   try { task = await client.getTask(id); }
-  catch (error) { return { schema_version: 1, status: 'query_failed', task_id: id, error: cleanError(error, cfg) }; }
+  catch (error) { return { schema_version: 1, status: 'query_failed', task_id: id, error: cleanError(error, cfg), failure: failureInfo(error, cfg) }; }
   const { job, record } = newJob(cfg, media, task.model ?? '', outputDir);
   job.submission = { state: 'known', task: sanitized(task, [cfg.apiKey]) };
   await save(record, job, cfg);
@@ -309,7 +319,7 @@ function extractText(task: TaskResponse): string | null {
   return null;
 }
 
-export async function understand(cfg: LoadedConfig, options: { model: string; prompt: string; content: Array<Record<string, unknown>>; outputDir: string; waitSeconds: number; systemPrompt?: string; maxTokens?: number; temperature?: number }) {
+export async function understand(cfg: LoadedConfig, options: { model: string; prompt: string; content: Array<Record<string, unknown>>; outputDir: string; waitSeconds: number; systemPrompt?: string; maxTokens?: number; temperature?: number; onRecord?: (record: string) => Promise<void> }) {
   if (!options.content.length) throw new Error('understand 至少需要一个 image_url、audio_url、video_url 或 file_url 内容块。');
   if (!options.content.some((item) => ['image_url', 'audio_url', 'video_url', 'file_url'].includes(String(item.type)))) throw new Error('understand 只接受图片、音频、视频或文件内容块；纯文本请求不属于 E1。');
   for (const item of options.content) {
@@ -332,12 +342,15 @@ export async function understand(cfg: LoadedConfig, options: { model: string; pr
   if (options.temperature !== undefined) body.temperature = options.temperature;
   const { job, record } = newJob(cfg, 'understanding', options.model, options.outputDir);
   await save(record, job, cfg);
+  await options.onRecord?.(record);
   return withJobLock(record, async () => {
     try {
       const task = await client.submitGeneration('/v1/llm/generations', body, { timeoutMs: LLM_SUBMIT_TIMEOUT_MS });
       job.submission = { state: 'known', task: sanitized(task as TaskResponse, [cfg.apiKey]) };
       await save(record, job, cfg);
     } catch (error) {
+      if (error instanceof TaskPersistenceError) throw error;
+      job.failure = failureInfo(error, cfg);
       job.submission = { state: error instanceof ApiError && !error.ambiguous ? 'not_submitted' : 'submission_unknown', error: cleanError(error, cfg) };
       await save(record, job, cfg).catch(() => {});
       return result(job, record);
@@ -353,7 +366,7 @@ export async function understand(cfg: LoadedConfig, options: { model: string; pr
   });
 }
 
-export async function nativeMusic(cfg: LoadedConfig, options: { model: string; body: Record<string, unknown>; outputDir: string }) {
+export async function nativeMusic(cfg: LoadedConfig, options: { model: string; body: Record<string, unknown>; outputDir: string; onSubmit?: () => Promise<void> }) {
   if (options.model !== 'lyria-3-pro-preview') throw new Error('Gemini 原生音乐命令只接受模型 lyria-3-pro-preview；异步 lyria-3-pro 请使用 generate。');
   if (!Array.isArray(options.body.contents) || !options.body.contents.length) throw new Error('Gemini 原生音乐请求必须包含非空 contents。');
   const generationConfig = options.body.generationConfig;
@@ -362,6 +375,8 @@ export async function nativeMusic(cfg: LoadedConfig, options: { model: string; b
     throw new Error('Gemini 原生音乐请求的 generationConfig.responseModalities 必须包含 AUDIO。');
   }
   assertOutsideInstallation(options.outputDir);
+  await checkMediaTools();
+  await options.onSubmit?.();
   const response: GeminiMusicResponse = await new AihubmaxClient(cfg).generateGeminiMusic(options.model, options.body);
   const parts = response.candidates?.flatMap((candidate) => candidate.content?.parts ?? []) ?? [];
   const audio = parts.find((item) => item.inlineData?.data);
@@ -408,6 +423,6 @@ export async function upload(cfg: LoadedConfig, input: Record<string, unknown>) 
     }
     return { schema_version: 1, status: 'ok', ...data };
   } catch (error) {
-    return { schema_version: 1, status: error instanceof ApiError && error.ambiguous ? 'submission_unknown' : 'not_submitted', error: cleanError(error, cfg) };
+    return { schema_version: 1, status: error instanceof ApiError && error.ambiguous ? 'submission_unknown' : 'not_submitted', error: cleanError(error, cfg), failure: failureInfo(error, cfg) };
   }
 }

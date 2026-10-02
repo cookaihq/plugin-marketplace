@@ -34,7 +34,7 @@ Start a new session after installation. See [AIhub](aihub/) for runtime requirem
 <!-- release-table:begin -->
 | 目标 | 版本 | Release |
 |---|---|---|
-| aihub | 0.7.0 | [aihub/v0.7.0](https://github.com/cookaihq/plugin-marketplace/releases/tag/aihub%2Fv0.7.0) |
+| aihub | 0.9.0 | [aihub/v0.9.0](https://github.com/cookaihq/plugin-marketplace/releases/tag/aihub%2Fv0.9.0) |
 | brain-hands | 0.1.3 | [brain-hands/v0.1.3](https://github.com/cookaihq/plugin-marketplace/releases/tag/brain-hands%2Fv0.1.3) |
 | tikin-plugin | 0.2.1 | [tikin-plugin/v0.2.1](https://github.com/cookaihq/plugin-marketplace/releases/tag/tikin-plugin%2Fv0.2.1) |
 <!-- release-table:end -->

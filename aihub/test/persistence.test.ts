@@ -9,7 +9,7 @@ const apiUrl = new URL('../src/apiClient.js', import.meta.url).href;
 const configUrl = new URL('../src/config.js', import.meta.url).href;
 
 /** Only the record commit fails; locks use the real filesystem in a temporary directory. */
-async function persistenceFailure(mode: 'resume' | 'task') {
+async function persistenceFailure(mode: 'resume' | 'task' | 'understand') {
   const script = `
 import fsp from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -22,7 +22,7 @@ const mode = ${JSON.stringify(mode)};
 const directory = await fsp.mkdtemp(join(tmpdir(), 'aihub-persistence-test-'));
 const record = join(directory, 'task.json');
 const key = 'synthetic-persistence-test-key';
-const task = { id: 'already-paid-task', status: mode === 'resume' ? 'processing' : 'completed', model: 'gpt-image-2', results: [] };
+const task = { id: 'already-paid-task', status: mode === 'resume' ? 'processing' : 'completed', model: mode === 'understand' ? 'gemini-3.8-flash' : 'gpt-image-2', results: [] };
 const job = { schema_version: 1, local_id: 'fixture', skill: 'aihub-image', media: 'image', model: 'gpt-image-2',
   service_url: 'https://fixture.invalid', credential_id: credentialId(key), output_dir: join(directory, 'files'),
   submission: { state: 'known', task }, files: [], failed: [] };
@@ -32,19 +32,24 @@ let saveAttempts = 0;
 fsp.rename = async (from, to) => {
   if (String(to).endsWith('/task.json')) {
     saveAttempts++;
-    throw Object.assign(new Error('simulated ENOSPC saving known task'), { code: 'ENOSPC' });
+    if (mode !== 'understand' || saveAttempts > 1) throw Object.assign(new Error('simulated ENOSPC saving known task'), { code: 'ENOSPC' });
   }
   return originalRename(from, to);
 };
 syncBuiltinESMExports();
 let posts = 0;
 let queries = 0;
-AihubmaxClient.prototype.submitGeneration = async () => { posts++; throw new Error('Unexpected paid submission'); };
+AihubmaxClient.prototype.submitGeneration = async () => { posts++; if (mode === 'understand') return task; throw new Error('Unexpected paid submission'); };
+AihubmaxClient.prototype.listLlmModels = async () => [{ id: 'gemini-3.8-flash', capabilities: ['vision'] }];
 AihubmaxClient.prototype.getTask = async () => { queries++; return task; };
 AihubmaxClient.prototype.pollTask = async () => { queries++; throw new PollBudgetExceededError(task.id, task); };
 process.env.AIHUB_API_KEY = key;
 process.env.AIHUB_BASE_URL = 'https://fixture.invalid';
-const args = mode === 'resume'
+const params = join(directory, 'understanding.json');
+if (mode === 'understand') await fsp.writeFile(params, JSON.stringify({ model: 'gemini-3.8-flash', prompt: 'Check the image', content: [{ type: 'image_url', image_url: { url: 'https://fixture.invalid/image.png' } }] }));
+const args = mode === 'understand'
+  ? ['understand', '--skill', 'aihub-understanding', '--params-file', params, '--output-dir', directory]
+  : mode === 'resume'
   ? ['resume', '--skill', 'aihub-image', '--record', record]
   : ['task', '--skill', 'aihub-image', '--task-id', task.id, '--media', 'image', '--output-dir', directory];
 try {
@@ -85,4 +90,14 @@ test('adopting an existing task preserves its ID when the first record write fai
   assert.equal(observed.posts, 0);
   assert.equal(observed.queries, 1);
   assert((observed.saveAttempts ?? 0) > 0);
+});
+
+test('accepted understanding tasks retain their ID if saving fails, without becoming an uncertain new submission', async () => {
+  const { output, observed } = await persistenceFailure('understand');
+  assert.equal(output.status, 'persistence_failed');
+  assert.equal(output.task_id, 'already-paid-task');
+  assert.equal(output.remote_status, 'completed');
+  assert.equal(observed.posts, 1);
+  assert.equal(observed.queries, 0);
+  assert.equal(observed.code, 2);
 });

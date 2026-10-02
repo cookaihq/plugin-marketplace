@@ -1,4 +1,4 @@
-import { AihubmaxClient } from './apiClient.js';
+import { AihubmaxClient, ApiError } from './apiClient.js';
 import { listModelSummaries, resolveEntry, type CatalogEntry } from './catalog.js';
 import type { Media } from './state.js';
 
@@ -111,7 +111,8 @@ export async function models(client: AihubmaxClient, media?: Media, keyword?: st
       return { status: 'ok', availability_known: true, models: rows, catalog_only: [], preferred_models: PREFERRED_MODELS.understanding,
         note: 'E1 uses the separate /v1/configs/llm_generations_models registry. Only models declaring the requested media capability may be submitted; pure text is excluded.' };
     } catch (error) {
-      return { status: 'availability_unknown', availability_known: false, models: [], catalog_only: [], error: (error as Error).message };
+      return { status: 'availability_unknown', availability_known: false, models: [], catalog_only: [], error: (error as Error).message,
+        ...(error instanceof ApiError ? { failure: { http_status: error.status, ambiguous: error.ambiguous } } : {}) };
     }
   }
   const catalog = listModelSummaries({ mediaType: media, keyword }).filter(row => {
@@ -145,9 +146,10 @@ export async function models(client: AihubmaxClient, media?: Media, keyword?: st
     }
     return { status: 'ok', availability_known: true, models: rows, catalog_only: catalog.filter(row => !mapped.has(row.model)),
       preferred_models: media ? (PREFERRED_MODELS[media] ?? []) : PREFERRED_MODELS,
-      note: 'Listed model IDs are visible to this key; a working generation channel is not guaranteed. Image defaults to GPT Image 2.5 Flare; select Sunburst for explicit detail/fidelity requirements when speed is not the priority. Seedance 2.5 video selection follows input purpose: text-only, a single starting frame, or reference media. Seedance 2.0 variants require explicit user selection and are never automatic fallbacks. C1 defaults to lipsync-2 and C2 to omnihuman-1.5; D1 defaults are speech-2.8-hd and paraformer-v2; D2 defaults to lyria-3-pro; E2 uses doc2x-v3. Unavailable selected models are reported without fallback.' };
+      note: 'Listed model IDs are visible to this key; a working generation channel is not guaranteed. preferred marks built-in recommendations, not the configured model order. Read model_selection for current configuration and use plan for task-specific candidates. run and continue follow the saved fallback policy and preserve all input requirements; no model is appended automatically. Explicit user model choices remain fixed. Legacy single-model commands do not perform fallback.' };
   } catch (error) {
-    return { status: 'availability_unknown', availability_known: false, models: [], catalog_only: catalog, error: (error as Error).message };
+    return { status: 'availability_unknown', availability_known: false, models: [], catalog_only: catalog, error: (error as Error).message,
+        ...(error instanceof ApiError ? { failure: { http_status: error.status, ambiguous: error.ambiguous } } : {}) };
   }
 }
 

@@ -124,6 +124,5 @@ test('live model output marks Flare as the ordinary image default and all three 
   const unavailable = await models(client, 'video');
   const legacy = unavailable.models as Array<{ model: string; preferred: boolean; default: boolean }>;
   assert.deepEqual(legacy.map(row => [row.model, row.preferred, row.default]), [['seedance-2.0-text-to-video', false, false]]);
-  assert.match(unavailable.note!, /require explicit user selection and are never automatic fallbacks/);
   assert.ok(unavailable.catalog_only.some(row => row.model === 'seedance-2.5-text-to-video'));
 });

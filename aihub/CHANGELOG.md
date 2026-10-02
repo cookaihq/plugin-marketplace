@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.0 — 2026-10-02
+
+- Check delivered results against preserved user requirements by default. Prefer available host media tools, or use configurable AIhub reviewers with `gemini-3.8-flash` as the built-in default.
+- Add `review` and `review-submit`, per-requirement evidence, file hashes, bounded document text extraction and resumable review tasks. Incomplete coverage cannot pass; check failures never regenerate media or automatically switch reviewers.
+- Remind users after every enabled completed check that they can disable checks through conversation; document single-task and persistent configuration actions in all six Skills.
+- Count independent upstream errors, deduplicate terminal task failures, and produce a local public Issue draft plus private administrator diagnostics. Never send feedback automatically or copy raw responses into reports.
+- Add optional check and feedback settings to the layered loader, source inspection, credential declaration and packaged instructions. Only the API Key remains required.
+
+## 0.8.0 — 2026-10-01
+
+- Read ordered per-Skill model lists and `auto`, `confirm`, `off`, or `preflight_only` fallback policies; only the API Key is required and the built-in service URL remains overridable.
+- Add `plan`, `run`, and `continue` with saved requirements, independently validated model requests, attempt limits and persistent confirmation. Explicit user model choices stay fixed.
+- Keep uncertain submissions, active tasks, query/download errors and content mismatches on their original task. Legacy `resume` never submits another generation; native music now checks media tools before submission.
+- Route all six Skills through the configured model workflow, documenting verified parameter mappings and unsupported conversions.
+- Add `config-check` to report effective configuration files, missing or invalid settings and stale-report checks without exposing values or requiring network/media tools.
+- Use secret-book to preview and save consumer configuration, repairing the actual source file and using Plugin globals only for new settings without an existing location. Normal AIhub commands read local configuration directly; table rotation does not automatically overwrite it.
+- Report authentication rejection with configuration sources, separately from balance, permissions, rate limits and network errors. Configuration repair does not resubmit a business request.
+- Update the first-configuration prompt and shared workflow; keep record/key confirmation and Agent rule inspection in secret-book.
+
 ## 0.7.0 — 2026-10-01
 
 - Add the current Skill's `~/.config/<skill-name>/.env` after all five Plugin global files, filling each missing or empty field without overriding Plugin, project or process settings.

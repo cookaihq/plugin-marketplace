@@ -1,5 +1,6 @@
 /** HTTP contracts migrated from aihub-mcp f027798; no MCP runtime dependency. */
 import type { Config } from "./config.js";
+import { observeRequestError, observeTerminalTask } from './diagnostics.js';
 
 export type TaskStatus = "pending" | "processing" | "completed" | "failed";
 
@@ -187,7 +188,9 @@ export class AihubmaxClient {
       } catch (cause) {
         // A known deterministic HTTP rejection stays terminal even if its body disconnects.
         if (response && response.status >= 400 && response.status < 500 && response.status !== 429) {
-          throw this.toApiError(response.status, "服务端拒绝请求，错误响应体未完整收到。", false);
+          const error = this.toApiError(response.status, "服务端拒绝请求，错误响应体未完整收到。", false);
+          observeRequestError(error, method, path);
+          throw error;
         }
         const definitelyNotSent = !response && isPreSendNetworkError(cause);
         const ambiguous = isWrite && !definitelyNotSent;
@@ -197,6 +200,7 @@ export class AihubmaxClient {
           `网络请求失败（${method} ${path}）：${detail || "未收到完整响应"}。` +
           (ambiguous ? "写入结果不明，请勿自动重新提交。" : "")),
           response?.status ?? 0, "network", ambiguous ? "ambiguous" : "network_error", undefined, ambiguous, retryable);
+        observeRequestError(error, method, path);
         if (retryable && attempt + 1 < MAX_ATTEMPTS) {
           await this.waitForRetry(retryDelayMs(response, attempt), attempt, error, opts);
           continue;
@@ -209,17 +213,20 @@ export class AihubmaxClient {
           if (!text) throw new Error("empty response");
           return JSON.parse(text) as T;
         } catch {
-          throw new ApiError(this.redact(
+          const error = new ApiError(this.redact(
             `服务端返回了非 JSON 响应（HTTP ${response.status}，${method} ${path}）。` +
             "请检查 AIHUB_BASE_URL 是否指向 API 网关。" +
             (isWrite ? "写入结果不明，请勿自动重新提交。" : "")),
             response.status, "protocol", "invalid_response", undefined, isWrite);
+          observeRequestError(error, method, path);
+          throw error;
         }
       }
 
       // No verified idempotency or rejection guarantee exists for AIhub generation POSTs.
       // In particular, HTTP 429 does not justify automatically repeating a paid submission.
-      const error = this.toApiError(response.status, text, isWrite && (response.status >= 500 || response.status === 429));
+      const error = this.toApiError(response.status, text, isWrite && (response.status >= 500 || response.status === 429), response.headers.get('x-request-id') ?? undefined);
+      observeRequestError(error, method, path);
       if (error.retryable && !isWrite && attempt + 1 < MAX_ATTEMPTS) {
         await this.waitForRetry(retryDelayMs(response, attempt), attempt, error, opts);
         continue;
@@ -248,20 +255,20 @@ export class AihubmaxClient {
       .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1***@");
   }
 
-  private toApiError(status: number, text: string, ambiguous: boolean): ApiError {
+  private toApiError(status: number, text: string, ambiguous: boolean, headerRequestId?: string): ApiError {
     // Redact before truncating: slicing through a key would otherwise leave a
     // secret fragment that no longer matches the full configured key.
     let message = this.redact(text).slice(0, 400);
     let type: string | undefined;
     let code: string | undefined;
-    let requestId: string | undefined;
+    let requestId: string | undefined = headerRequestId;
     try {
       const parsed = JSON.parse(text) as { error?: { message?: unknown; type?: unknown; code?: unknown } };
       if (parsed?.error) {
         if (typeof parsed.error.message === "string") message = this.redact(parsed.error.message).slice(0, 400);
         if (typeof parsed.error.type === "string") type = this.redact(parsed.error.type);
         if (typeof parsed.error.code === "string") code = this.redact(parsed.error.code);
-        requestId = /request_id:\s*([\w-]+)/.exec(message)?.[1];
+        requestId ??= /request_id:\s*([\w-]+)/.exec(message)?.[1];
       }
     } catch { /* A non-JSON rejection still retains its HTTP status. */ }
     const hints: Record<number, string> = {
@@ -281,9 +288,12 @@ export class AihubmaxClient {
   async submitGeneration(path: string, params: Record<string, unknown>, opts?: RequestOptions): Promise<SubmitResponse> {
     const result = await this.request<SubmitResponse>("POST", path, params, opts);
     if (!result || typeof result.id !== "string" || !result.id || !TASK_STATUSES.has(result.status)) {
-      throw new ApiError("生成请求未返回有效的任务 ID 与状态；写入结果不明，请勿自动重新提交。",
+      const error = new ApiError("生成请求未返回有效的任务 ID 与状态；写入结果不明，请勿自动重新提交。",
         200, "protocol", "invalid_response", undefined, true);
+      observeRequestError(error, 'POST', path);
+      throw error;
     }
+    observeTerminalTask(result);
     return result;
   }
 
@@ -291,8 +301,11 @@ export class AihubmaxClient {
     const suffix = syncUpstream ? "?sync_upstream=true" : "";
     const task = await this.request<TaskResponse>("GET", `/v1/tasks/${encodeURIComponent(taskId)}${suffix}`, undefined, opts);
     if (!task || task.id !== taskId || !TASK_STATUSES.has(task.status)) {
-      throw new ApiError("任务查询响应缺少有效 ID 或状态，请保留原 task_id 后再次查询。", 200, "protocol", "invalid_response");
+      const error = new ApiError("任务查询响应缺少有效 ID 或状态，请保留原 task_id 后再次查询。", 200, "protocol", "invalid_response");
+      observeRequestError(error, 'GET', `/v1/tasks/${encodeURIComponent(taskId)}`);
+      throw error;
     }
+    observeTerminalTask(task);
     return task;
   }
 
@@ -339,7 +352,9 @@ export class AihubmaxClient {
   async listLiveModels(): Promise<Map<string, LiveModel>> {
     const result = await this.request<{ data?: LiveModel[] }>("GET", "/v1/models");
     if (!result || !Array.isArray(result.data) || result.data.some((model) => !model || typeof model.id !== "string")) {
-      throw new ApiError("模型清单响应格式无效，无法确认模型可用性。", 200, "protocol", "invalid_response");
+      const error = new ApiError("模型清单响应格式无效，无法确认模型可用性。", 200, "protocol", "invalid_response");
+      observeRequestError(error, 'GET', '/v1/models');
+      throw error;
     }
     return new Map(result.data.map((model) => [model.id, model]));
   }
@@ -348,7 +363,9 @@ export class AihubmaxClient {
   async listLlmModels(): Promise<LlmModel[]> {
     const result = await this.request<{ data?: LlmModel[] }>("GET", "/v1/configs/llm_generations_models");
     if (!result || !Array.isArray(result.data) || result.data.some((model) => !model || typeof model.id !== "string")) {
-      throw new ApiError("LLM 模型清单响应格式无效，无法确认理解模型能力。", 200, "protocol", "invalid_response");
+      const error = new ApiError("LLM 模型清单响应格式无效，无法确认理解模型能力。", 200, "protocol", "invalid_response");
+      observeRequestError(error, 'GET', '/v1/configs/llm_generations_models');
+      throw error;
     }
     return result.data;
   }
@@ -358,7 +375,9 @@ export class AihubmaxClient {
     const path = `/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const response = await this.request<GeminiMusicResponse>("POST", path, body, { retry: "non-idempotent" });
     if (!response || !Array.isArray(response.candidates)) {
-      throw new ApiError("Gemini 音乐响应缺少 candidates；原生请求结果不明，请勿自动重试。", 200, "protocol", "invalid_response", undefined, true);
+      const error = new ApiError("Gemini 音乐响应缺少 candidates；原生请求结果不明，请勿自动重试。", 200, "protocol", "invalid_response", undefined, true);
+      observeRequestError(error, 'POST', path);
+      throw error;
     }
     return response;
   }
@@ -367,7 +386,9 @@ export class AihubmaxClient {
   async getPricing(): Promise<PricingTable> {
     const result = await this.request<{ data?: PricingEntry[]; group_ratio?: Record<string, number> }>("GET", "/api/pricing");
     if (!result || !Array.isArray(result.data)) {
-      throw new ApiError("定价清单响应格式无效。", 200, "protocol", "invalid_response");
+      const error = new ApiError("定价清单响应格式无效。", 200, "protocol", "invalid_response");
+      observeRequestError(error, 'GET', '/api/pricing');
+      throw error;
     }
     return { models: new Map(result.data.map((entry) => [entry.model_name, entry])), groupRatio: result.group_ratio ?? {} };
   }

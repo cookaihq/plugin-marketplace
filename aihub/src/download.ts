@@ -24,6 +24,19 @@ const IMAGE_FORMATS = new Set([
 const VIDEO_FORMATS = ["mov", "mp4", "m4a", "3gp", "3g2", "mj2", "matroska", "webm", "avi", "mpeg", "mpegts", "ogg", "flv"];
 const AUDIO_FORMATS = ["mp3", "wav", "flac", "aac", "aiff", "amr", "ac3", "eac3", "opus"];
 const PROBE_FORMATS = [...IMAGE_FORMATS, ...VIDEO_FORMATS, ...AUDIO_FORMATS].join(",");
+export interface MediaMeasurements { width?: number; height?: number; duration_seconds?: number; has_audio: boolean }
+/** The same restricted local formats as download validation; never follows media URLs. */
+export async function measureLocalMedia(path: string): Promise<MediaMeasurements> {
+  const { stdout, stderr } = await runFile('ffprobe', ['-v', 'error', '-protocol_whitelist', 'file', '-format_whitelist', PROBE_FORMATS,
+    '-show_entries', 'stream=codec_type,width,height:stream_disposition=attached_pic:format=duration', '-of', 'json', resolve(path)],
+    { timeout: PROBE_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+  if (stderr.trim()) throw new Error('Media measurements unavailable.');
+  const probe = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string; width?: number; height?: number; disposition?: { attached_pic?: number } }>; format?: { duration?: string } };
+  const video = probe.streams?.find(s => s.codec_type === 'video' && !s.disposition?.attached_pic);
+  const duration = Number(probe.format?.duration);
+  return { ...(video?.width && video.height ? { width: video.width, height: video.height } : {}),
+    ...(Number.isFinite(duration) && duration >= 0 ? { duration_seconds: duration } : {}), has_audio: probe.streams?.some(s => s.codec_type === 'audio') ?? false };
+}
 
 export type DownloadMedia = "image" | "video" | "audio" | "document";
 export interface DownloadedFile { url: string; path: string; bytes: number; mime_type: string }

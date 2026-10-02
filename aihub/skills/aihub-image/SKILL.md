@@ -1,7 +1,7 @@
 ---
 name: aihub-image
-version: 0.7.0
-description: v0.7.0｜Generate or edit images through AIhub for A1 text-to-image and A2 reference-image editing. Use GPT Image 2.5 Flare by default or for speed; use Sunburst for explicit detail priority when speed is secondary. Resume existing AIhub image tasks and deliver verified files.
+version: 0.9.0
+description: v0.9.0｜Generate or edit images through AIhub with configured model priorities and recoverable fallback. Without configuration, use GPT Image 2.5 Flare for speed or Sunburst for detail. Resume existing image tasks and deliver checked files.
 compatibility: Codex and WorkBuddy; Node.js 18 or newer, ffprobe on PATH, AIhub API access.
 ---
 
@@ -11,7 +11,7 @@ compatibility: Codex and WorkBuddy; Node.js 18 or newer, ffprobe on PATH, AIhub 
 
 ## 选择图片模型
 
-选择优先级是：用户明确指定型号 → 明确的速度/细节优先级 → 草稿、多轮或无细节要求时默认 Flare。草稿标签不能覆盖明确的细节优先要求，例如“精细草稿、不赶时间”选 Sunburst。指定型号仍须通过账号可见性和输入参数检查。未指定时按下表选择：
+选择优先级是：用户本次明确指定型号 → `AIHUB_IMAGE_MODELS` 有序配置 → 下表的内置规则。指定型号固定执行并关闭 fallback，仍须通过账号可见性和参数检查。没有模型配置时，草稿标签不能覆盖明确的细节优先要求，例如“精细草稿、不赶时间”选 Sunburst：
 
 | 用户需求 | 默认模型 |
 | --- | --- |
@@ -23,23 +23,33 @@ compatibility: Codex and WorkBuddy; Node.js 18 or newer, ffprobe on PATH, AIhub 
 
 ## 执行流程
 
-先读取 [共用 CLI 与恢复流程](../../references/cli.md)，再按以下顺序操作：
+先读取 [共用 CLI 与恢复流程](../../references/cli.md) 和 [任务 JSON、模型配置与切换](../../references/model-selection.md)，再按以下顺序操作：
 
-1. 用户已有任务记录或任务 ID 时，只执行 `resume` 或 `task` 查询原任务，不重新生成。
-2. 新任务先按上面的需求规则确定精确型号，再执行 `doctor` 和 `models --media image` 核对该型号是否可见；不可见就报告，不改选其他可见型号。
-3. 用 `describe --model` 读取线上原始模型 ID 对应的参数。A1 只传 `prompt` 及所需输出选项；A2 传 `image_urls` 和编辑提示词，遮罩编辑按模型说明校验 `mask_url` 和参考图。默认 2.5 型号读取各自当前目录，不能套用旧 `gpt-image-2` 的字段或尺寸限制；用户显式指定旧型号则读取该型号的说明。精准像素尺寸与遮罩外逐像素保持尚未得到真实效果验证，不能仅凭字段可提交作保证。当前账号看不到精确 ID 时不提交。
-4. 本地参考图不能直接作为远程 URL 时，按共用上传流程上传，使用上传响应中的 URL。参数 JSON 写入用户任务目录，再调用 `generate --media image`。
-5. 只有状态为 `delivered` 的文件可作为程序已验证的图片交付；`partial` 只交付 `files` 中的文件并说明 `failed`。根据宿主能力查看实际图像内容。
+1. 用户已有 `run.json` 时执行 `continue`；旧 `task.json` 或任务 ID 使用 `resume` / `task`，只查询和下载原任务。
+2. 新任务执行 `doctor`，把用户原文写入 `original_request`，A1 选择 `operation=image-generate`，A2 选择 `image-edit`。Agent 只填写需求和素材用途；仅用户明确指定时才填 `model`，内置速度/细节偏好填 `image_priority`。
+3. 本地素材先上传，把实际 URL 写入 `inputs.images`，遮罩写入 `inputs.mask`。输出条件写入 `requirements`。运行 `plan`，结合 `describe` 核对每个候选的独立参数；不能套用旧 `gpt-image-2` 的尺寸契约。精准像素尺寸与遮罩外逐像素保持尚无真实效果验证，不能仅凭字段可提交作保证。
+4. 运行 `run`。CLI 检查当前可见性并按保存的策略切换；后续使用返回的 `run_record` 继续。`confirmation_required` 时列出下一模型、请求参数和原因，得到用户明确确认后才传 `--confirm`，不能直接执行含 token 的 `next_action`。
+5. 只有 `delivered` 表示文件全部通过程序检查；`partial` 先交付 `files` 并说明内层 `result.failed`。根据宿主能力查看实际图像，报告最终型号和已尝试型号。
 
 ```bash
 AIHUB_PLUGIN_DIR="<实际 Plugin 目录>"
 node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" doctor --skill aihub-image
 node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" models --skill aihub-image --media image
 node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" describe --skill aihub-image --model "gpt-image-2.5-flare"
-node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" generate --skill aihub-image --media image \
-  --model "gpt-image-2.5-flare" --params-file "/任务目录/image-params.json" --output-dir "/任务目录/outputs"
-node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" resume --skill aihub-image \
-  --record "/任务目录/outputs/aihub-UUID/task.json" --wait-seconds 30
+node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" plan --skill aihub-image --request-file "/任务目录/image-request.json"
+node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" run --skill aihub-image \
+  --request-file "/任务目录/image-request.json" --output-dir "/任务目录/data/aihub" --wait-seconds 30
+node "${AIHUB_PLUGIN_DIR}/scripts/aihub.mjs" continue --skill aihub-image \
+  --record "/任务目录/data/aihub/aihub-run-UUID/run.json" --wait-seconds 30
 ```
 
-模型列表可见不等于生成渠道已通过验收；提交、等待、下载或内容检查失败时，保留原任务 ID，不自动换模型重试。
+模型列表可见不等于生成渠道已通过验收。提交结果不明、仍在运行、查询/下载失败或画面不符合要求时，不触发替换生成；保留记录及已知任务 ID，按共用状态表继续。
+
+
+## 结果检查与用户提示
+
+新任务与交付前读取 [结果检查与错误反馈](../../references/result-checks.md)。保存原始需求及具体检查项，完成生成后读取 `result_check`：`pending` 时实际查看产物并通过 `review-submit` 提交证据；`auto` 下宿主缺少必要能力才使用 `review --provider aihub`，`host` 下明确报告无法检查。`checking` 查询原检查任务，不提交新请求。
+
+检查开启时，每次完成检查都必须告诉用户：“如果想关闭结果检查，可以直接在对话中告诉我‘关闭结果检查’；也可以说‘仅本次关闭结果检查’。”通过、不符、证据不足或无法检查都要提示，不能只保留在 JSON 中。用户要求关闭时按参考说明执行，沿用已明确作用范围；范围不明再询问。关闭后仍执行文件检查。
+
+`feedback.show_notice=true` 时提供报告路径与 Issue/管理员入口；公开只使用脱敏草稿，不自动发送。结果不符或检查失败不触发重新生成。

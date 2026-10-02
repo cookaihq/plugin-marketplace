@@ -33,12 +33,18 @@ export function assertOutsideInstallation(path) {
     }
 }
 export async function writeJob(path, job) {
+    await writePrivateRecord(path, { ...job, updated_at: new Date().toISOString() });
+}
+export async function writePrivateRecord(path, value) {
+    await writePrivateText(path, JSON.stringify(value, null, 2) + '\n');
+}
+export async function writePrivateText(path, value) {
     assertOutsideInstallation(path);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const temp = `${path}.${randomUUID()}.tmp`;
     const handle = await open(temp, 'wx', 0o600);
     try {
-        await handle.writeFile(JSON.stringify({ ...job, updated_at: new Date().toISOString() }, null, 2) + '\n');
+        await handle.writeFile(value);
         await handle.sync();
         await handle.close();
         await rename(temp, path);

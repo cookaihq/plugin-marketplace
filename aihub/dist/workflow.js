@@ -9,6 +9,11 @@ import { assertOutsideInstallation, readJob, recordPath, withJobLock, writeJob }
 function cleanError(error, cfg) {
     return sanitized(error instanceof Error ? error.message : String(error), [cfg.apiKey]);
 }
+export function failureInfo(error, cfg) {
+    return sanitized(error instanceof ApiError ? { http_status: error.status, code: error.code,
+        type: error.type, request_id: error.requestId, ambiguous: error.ambiguous }
+        : { http_status: 0, ambiguous: true }, [cfg.apiKey]);
+}
 export class TaskPersistenceError extends Error {
     job;
     record;
@@ -82,6 +87,7 @@ export function result(job, record, statusOverride) {
         : sub.state === 'submitting' ? 'The process stopped before submission was confirmed. Do not resubmit automatically.' : sub.error;
     const metadata = sub.state === 'known' ? resultMetadata(sub.task) : undefined;
     return { schema_version: 1, status: statusOverride ?? status, record, media: job.media, model: job.model,
+        ...(job.failure ? { failure: job.failure } : {}),
         ...(sub.state === 'known' ? { task_id: sub.task.id, remote_status: sub.task.status, progress: sub.task.progress } : {}),
         ...(job.text !== undefined ? { text: job.text } : {}), files: job.files, failed: job.failed, ...(metadata ? { result_metadata: metadata } : {}), ...(error ? { error } : {}),
         ...(sub.state === 'known' && status !== 'remote_failed' && status !== 'delivered'
@@ -248,6 +254,7 @@ async function queryAndDeliver(client, cfg, job, record, waitSeconds) {
             })
             : await client.getTask(id);
         job.submission = { state: 'known', task: sanitized(task, [cfg.apiKey]) };
+        delete job.failure;
         if (task.model)
             job.model = task.model;
         if (job.media === 'understanding' && task.status === 'completed')
@@ -264,6 +271,7 @@ async function queryAndDeliver(client, cfg, job, record, waitSeconds) {
             return { ...result(job, record, 'waiting'), wait_result: 'budget_exhausted' };
         }
         job.last_error = cleanError(error, cfg);
+        job.failure = failureInfo(error, cfg);
         try {
             await save(record, job, cfg);
         }
@@ -296,6 +304,7 @@ export async function generate(cfg, options) {
         throw new Error('The exact model ID is not present in the current key model list. Run models and use its unchanged ID. No generation was submitted.');
     const { job, record } = newJob(cfg, options.media, options.model, options.outputDir);
     await save(record, job, cfg);
+    await options.onRecord?.(record);
     process.stderr.write(`AIhub task record: ${record}\n`);
     return withJobLock(record, async () => {
         try {
@@ -310,6 +319,7 @@ export async function generate(cfg, options) {
                 job.last_error = `Task accepted, but saving its ID failed: ${cleanError(error, cfg)}. Keep this task_id and use task to recover.`;
                 return result(job, record, 'query_failed');
             }
+            job.failure = failureInfo(error, cfg);
             job.submission = { state: error instanceof ApiError && !error.ambiguous ? 'not_submitted' : 'submission_unknown', error: cleanError(error, cfg) };
             try {
                 await save(record, job, cfg);
@@ -355,7 +365,7 @@ export async function adoptTask(cfg, id, media, outputDir, waitSeconds) {
         task = await client.getTask(id);
     }
     catch (error) {
-        return { schema_version: 1, status: 'query_failed', task_id: id, error: cleanError(error, cfg) };
+        return { schema_version: 1, status: 'query_failed', task_id: id, error: cleanError(error, cfg), failure: failureInfo(error, cfg) };
     }
     const { job, record } = newJob(cfg, media, task.model ?? '', outputDir);
     job.submission = { state: 'known', task: sanitized(task, [cfg.apiKey]) };
@@ -424,6 +434,7 @@ export async function understand(cfg, options) {
         body.temperature = options.temperature;
     const { job, record } = newJob(cfg, 'understanding', options.model, options.outputDir);
     await save(record, job, cfg);
+    await options.onRecord?.(record);
     return withJobLock(record, async () => {
         try {
             const task = await client.submitGeneration('/v1/llm/generations', body, { timeoutMs: LLM_SUBMIT_TIMEOUT_MS });
@@ -431,6 +442,9 @@ export async function understand(cfg, options) {
             await save(record, job, cfg);
         }
         catch (error) {
+            if (error instanceof TaskPersistenceError)
+                throw error;
+            job.failure = failureInfo(error, cfg);
             job.submission = { state: error instanceof ApiError && !error.ambiguous ? 'not_submitted' : 'submission_unknown', error: cleanError(error, cfg) };
             await save(record, job, cfg).catch(() => { });
             return result(job, record);
@@ -463,6 +477,8 @@ export async function nativeMusic(cfg, options) {
         throw new Error('Gemini 原生音乐请求的 generationConfig.responseModalities 必须包含 AUDIO。');
     }
     assertOutsideInstallation(options.outputDir);
+    await checkMediaTools();
+    await options.onSubmit?.();
     const response = await new AihubmaxClient(cfg).generateGeminiMusic(options.model, options.body);
     const parts = response.candidates?.flatMap((candidate) => candidate.content?.parts ?? []) ?? [];
     const audio = parts.find((item) => item.inlineData?.data);
@@ -527,6 +543,6 @@ export async function upload(cfg, input) {
         return { schema_version: 1, status: 'ok', ...data };
     }
     catch (error) {
-        return { schema_version: 1, status: error instanceof ApiError && error.ambiguous ? 'submission_unknown' : 'not_submitted', error: cleanError(error, cfg) };
+        return { schema_version: 1, status: error instanceof ApiError && error.ambiguous ? 'submission_unknown' : 'not_submitted', error: cleanError(error, cfg), failure: failureInfo(error, cfg) };
     }
 }

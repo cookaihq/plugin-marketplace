@@ -1,6 +1,6 @@
 {
   "name": "aihub",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "private": true,
   "description": "AIhub media, music, multimodal understanding and document workflows for Codex and WorkBuddy",
   "type": "module",

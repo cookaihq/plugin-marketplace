@@ -7,6 +7,7 @@ import type { TaskResponse } from './apiClient.js';
 
 export type Media = 'image' | 'video' | 'audio' | 'document' | 'understanding';
 export interface SavedFile { url: string; path: string; bytes: number; mime_type: string }
+export interface FailureInfo { http_status: number; code?: string; type?: string; request_id?: string; ambiguous: boolean }
 export type Submission =
   | { state: 'submitting' }
   | { state: 'submission_unknown'; error: string }
@@ -17,6 +18,7 @@ export interface Job {
   skill: string; media: Media; model: string; service_url: string; credential_id: string;
   output_dir: string; submission: Submission; files: SavedFile[];
   failed: Array<{ url: string; error: string }>; text?: string; last_error?: string;
+  failure?: FailureInfo;
 }
 
 const INSTALL_ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -43,12 +45,20 @@ export function assertOutsideInstallation(path: string): void {
 }
 
 export async function writeJob(path: string, job: Job): Promise<void> {
+  await writePrivateRecord(path, { ...job, updated_at: new Date().toISOString() });
+}
+
+export async function writePrivateRecord(path: string, value: unknown): Promise<void> {
+  await writePrivateText(path, JSON.stringify(value, null, 2) + '\n');
+}
+
+export async function writePrivateText(path: string, value: string): Promise<void> {
   assertOutsideInstallation(path);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx', 0o600);
   try {
-    await handle.writeFile(JSON.stringify({ ...job, updated_at: new Date().toISOString() }, null, 2) + '\n');
+    await handle.writeFile(value);
     await handle.sync();
     await handle.close();
     await rename(temp, path);
