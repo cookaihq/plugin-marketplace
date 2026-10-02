@@ -8,7 +8,7 @@
     {
       "name": "aihub",
       "source": "./aihub",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "description": "AIhub image, video, audio, music, multimodal understanding and document workflows for Codex and WorkBuddy.",
       "author": {
         "name": "cookaihq"

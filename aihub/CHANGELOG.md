@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 — 2026-10-02
+
+- Route WorkBuddy installation, discovery and updates through the running app's native plugin manager. Stop instructing Agents to launch a separate CodeBuddy CLI, including for help and validation, which can create an unwanted user `.codebuddy` directory.
+- Explain why configuration-directory environment variables alone cannot prevent the bundled CLI's hardcoded diagnostic directory. Preserve custom WorkBuddy directories and existing CodeBuddy data; no host binary patches or automatic cleanup.
+- Ship host-specific installation and recovery instructions, distinguish installation from Skill execution checks, and remove the outdated unpublished notice. Windows end-to-end validation remains pending.
+
 ## 0.9.0 — 2026-10-02
 
 - Check delivered results against preserved user requirements by default. Prefer available host media tools, or use configurable AIhub reviewers with `gemini-3.8-flash` as the built-in default.

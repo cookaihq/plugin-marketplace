@@ -1,4 +1,4 @@
-# AIhub Plugin 0.9.0
+# AIhub Plugin 0.9.1
 
 让 Codex 或 WorkBuddy 通过 AIhub 帮你生成和编辑图片、制作视频与音频、理解素材内容，或把 PDF 转成可编辑文档。适合已有 AIhub 调用账号、希望直接用对话描述任务的人。结果会保存到你指定的工作文件夹，Agent 会提供文件链接和实际检查结果。
 
@@ -33,10 +33,10 @@
 复制下面这段话到 Codex 或 WorkBuddy：
 
 ```text
-请安装 AIhub Plugin：优先用 https://github.com/cookaihq/plugin-marketplace，网络故障时自动改用 https://cnb.cool/zhidateam/tannt/plugin-marketplace.git；安装仓库内完整的 aihub/（aihub@plugin-marketplace），保留已有设置，并确认 Skill 可发现和调用。
+请安装 AIhub Plugin：优先用 https://github.com/cookaihq/plugin-marketplace，网络故障时改用 https://cnb.cool/zhidateam/tannt/plugin-marketplace.git。先阅读 aihub/README.md；在 WorkBuddy 中还须先读 aihub/references/workbuddy-install.md，使用当前应用的原生套件管理，不另起 CodeBuddy CLI。安装完整的 aihub@plugin-marketplace，保留已有设置，并确认 Skill 可发现和调用。
 ```
 
-截至 2026-09-30，两个来源的 main 均尚未发布 AIhub，需发布后才能安装。
+AIhub 已在上述 GitHub 与 CNB 来源发布。WorkBuddy 使用 **专家·技能·连接器 → 技能 → 套件** 中的原生管理入口；具体步骤见 [WorkBuddy 安装说明](references/workbuddy-install.md)。Agent 有界面操作能力时可代为完成，否则会给出操作步骤。安装过程沿用 WorkBuddy 已有配置，不应为此新建 `.codebuddy`；无需手动执行终端命令。
 
 ## 完成首次配置
 
@@ -215,6 +215,7 @@ AIhub 检查需要上传实际产物，单个产物沿用 20 MiB 限制，超过
 | 遇到的问题 | 发给 Agent 的话 |
 | --- | --- |
 | 插件市场找不到 AIhub，或安装后找不到 Skill | 请先确认使用的是 GitHub 还是 CNB，核对该来源是否已发布 aihub、是否安装到当前 Agent、六个 Skill 是否完整，以及是否需要新会话；区分尚未发布或同步与本机安装问题。 |
+| WorkBuddy 查询到空插件列表，或出现新的 `.codebuddy` 目录 | 停止另起 CodeBuddy CLI，按随包的 WorkBuddy 安装说明从原生套件管理查看市场和安装结果；保留已有目录及配置。仅补配置目录环境变量不能阻止旧版 CLI 创建诊断目录。 |
 | 想用 CNB，但已添加 GitHub 的同名插件市场 | 请检查 plugin-marketplace 当前来源，说明切换到 CNB 的方式及对已安装插件的影响，保留我的插件和设置。 |
 | 提示缺少 Node.js 或 ffprobe | 请检查当前运行环境中这两个工具是否能执行，并给出适合我的系统的安装或修复步骤。 |
 | 缺少密钥，或修改配置后未生效 | 请报告缺失或错误字段的实际来源和依据，让我选择修改本机文件或用 secret-book 修复；已有明确选择则沿用，修复原文件并重新检查，隐藏密钥值。 |
@@ -226,7 +227,7 @@ AIhub 检查需要上传实际产物，单个产物沿用 20 MiB 限制，超过
 
 ## 更新
 
-AIhub 按完整 Plugin 更新，六个 Skill 会一起更新。更新通过你当前使用的 Agent 的插件管理功能进行，读取当前已配置的 GitHub 或 CNB 来源；从 CNB 安装时，需要该版本已同步到 CNB 才能取得。本 Plugin 不带独立 Skill 的自动检查更新脚本，也不读取 `AUTO_UPDATE_CHECK` 开关。是否自动更新取决于宿主提供的功能和设置。
+AIhub 按完整 Plugin 更新，六个 Skill 会一起更新。更新通过你当前使用的 Agent 的插件管理功能进行，读取当前已配置的 GitHub 或 CNB 来源；WorkBuddy 的查询和更新继续遵循 [WorkBuddy 安装说明](references/workbuddy-install.md)，沿用同一宿主配置目录。从 CNB 安装时，需要该版本已同步到 CNB 才能取得。本 Plugin 不带独立 Skill 的自动检查更新脚本，也不读取 `AUTO_UPDATE_CHECK` 开关。是否自动更新取决于宿主提供的功能和设置。
 
 想了解新版时可以说：
 
