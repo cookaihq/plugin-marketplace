@@ -1,0 +1,25 @@
+{
+  "name": "aihub",
+  "version": "0.7.0",
+  "description": "AIhub image, video, audio, music, multimodal understanding and document workflows for Codex and WorkBuddy.",
+  "description_zh": "通过 AIhub 提供图片、视频、音频、音乐、多模态理解和文档处理 Skill。",
+  "author": {
+    "name": "cookaihq",
+    "url": "https://github.com/cookaihq"
+  },
+  "repository": "https://github.com/cookaihq/plugin-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "aihub",
+    "image-generation",
+    "image-editing",
+    "video-generation",
+    "audio",
+    "music",
+    "multimodal-understanding",
+    "document-processing"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

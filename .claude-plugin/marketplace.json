@@ -1,6 +1,6 @@
 {
   "name": "plugin-marketplace",
-  "description": "cookaihq's plugins for Claude Code and Codex: model-routing workflow tooling and social-media data access.",
+  "description": "cookaihq's plugins for Claude Code and Codex: model-routing workflows, social-media data, and AIhub media generation.",
   "owner": {
     "name": "cookaihq"
   },
@@ -15,6 +15,12 @@
       "source": "./tikin-plugin",
       "description": "Social-media data for AI agents via tikin. Download media and fetch posts, profiles, comments, search results, trends, and analytics across TikTok, Douyin, Instagram, YouTube, Twitter/X, Threads, Xiaohongshu, and more through tikin's unified REST API using your own tikin API key.",
       "category": "web-integration"
+    },
+    {
+      "name": "aihub",
+      "source": "./aihub",
+      "description": "AIhub image, video, audio, music, multimodal understanding and document workflows for Codex and WorkBuddy.",
+      "category": "productivity"
     }
   ]
 }
