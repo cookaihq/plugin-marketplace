@@ -27,7 +27,7 @@ codex plugin marketplace add cookaihq/plugin-marketplace
 codex plugin add aihub@plugin-marketplace
 ```
 
-For WorkBuddy, read [AIhub's WorkBuddy installation instructions](aihub/references/workbuddy-install.md) first. Use the running app's native plugin manager for installation, listing and updates; do not launch a separate CodeBuddy CLI, including for help or validation.
+For WorkBuddy, read [AIhub's illustrated installation instructions](aihub/references/workbuddy-install.md) first. The marketplace entry is the round **+** beside the marketplace names under **技能 → 套件**; “添加市场” is the dialog title after clicking it. When giving manual steps, show the bundled screenshot in the reply. Use the running app's native plugin manager for installation, listing and updates; do not launch a separate CodeBuddy CLI, including for help or validation.
 
 Start a new session after installation. See [AIhub](aihub/) for runtime requirements and API configuration.
 
@@ -38,7 +38,7 @@ Start a new session after installation. See [AIhub](aihub/) for runtime requirem
 <!-- release-table:begin -->
 | 目标 | 版本 | Release |
 |---|---|---|
-| aihub | 0.9.1 | [aihub/v0.9.1](https://github.com/cookaihq/plugin-marketplace/releases/tag/aihub%2Fv0.9.1) |
+| aihub | 0.9.2 | [aihub/v0.9.2](https://github.com/cookaihq/plugin-marketplace/releases/tag/aihub%2Fv0.9.2) |
 | brain-hands | 0.1.3 | [brain-hands/v0.1.3](https://github.com/cookaihq/plugin-marketplace/releases/tag/brain-hands%2Fv0.1.3) |
 | tikin-plugin | 0.3.0 | [tikin-plugin/v0.3.0](https://github.com/cookaihq/plugin-marketplace/releases/tag/tikin-plugin%2Fv0.3.0) |
 <!-- release-table:end -->

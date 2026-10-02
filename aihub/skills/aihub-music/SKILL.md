@@ -1,7 +1,7 @@
 ---
 name: aihub-music
-version: 0.9.1
-description: v0.9.1｜Generate AIhub music with lyria-3-pro async tasks or the separate Gemini-native lyria-3-pro-preview protocol, then save verified audio files.
+version: 0.9.2
+description: v0.9.2｜Generate AIhub music with lyria-3-pro async tasks or the separate Gemini-native lyria-3-pro-preview protocol, then save verified audio files.
 ---
 
 # AIhub Music

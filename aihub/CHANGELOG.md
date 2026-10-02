@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2 — 2026-10-02
+
+- Include the user-provided Windows screenshot in the Plugin and installation README, and require Agents to show it alongside manual WorkBuddy installation steps.
+- Identify the visible entry as the round **+** beside marketplace names under **技能 → 套件**, with “添加市场” appearing as the dialog title. Windows and macOS entry locations are confirmed; full installation and Skill execution remain unverified.
+
 ## 0.9.1 — 2026-10-02
 
 - Route WorkBuddy installation, discovery and updates through the running app's native plugin manager. Stop instructing Agents to launch a separate CodeBuddy CLI, including for help and validation, which can create an unwanted user `.codebuddy` directory.

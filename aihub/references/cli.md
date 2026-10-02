@@ -1,6 +1,6 @@
 # 共用 CLI、配置与任务恢复
 
-WorkBuddy 的 Plugin 安装、查询或更新按 [workbuddy-install.md](workbuddy-install.md) 使用当前应用的原生套件管理，禁止另起 CodeBuddy CLI（包括帮助或校验命令）。下面的 `scripts/aihub.mjs` 是业务程序，使用 AIhub 配置；它不管理宿主插件安装。
+WorkBuddy 的 Plugin 安装、查询或更新按 [workbuddy-install.md](workbuddy-install.md) 使用当前应用的原生套件管理；给用户手动操作步骤时按该说明同时展示随包截图，指明“技能 → 套件 → 市场名称右侧的＋”。禁止另起 CodeBuddy CLI（包括帮助或校验命令）。下面的 `scripts/aihub.mjs` 是业务程序，使用 AIhub 配置；它不管理宿主插件安装。
 
 六个 Skill 共用 Plugin 根目录下的 `scripts/aihub.mjs`。先按“首次配置、缺项与配置修复”核对来源；以下命令中的 `AIHUB_PLUGIN_DIR` 必须替换为实际安装目录，`AIHUB_CALLER` 固定为当前 Skill 的名称：`aihub-image`、`aihub-video`、`aihub-audio`、`aihub-music`、`aihub-understanding` 或 `aihub-document`。当前工作目录是用户任务目录，决定项目配置从哪里读取。
 
