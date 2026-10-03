@@ -1,19 +1,8 @@
 {
   "name": "plugin-marketplace",
-  "description": "cookaihq plugins for WorkBuddy and CodeBuddy, including AIhub media generation.",
+  "description": "AIhub and tikin have moved to cookaihq/aihub-marketplace. This marketplace currently has no WorkBuddy plugins.",
   "owner": {
     "name": "cookaihq"
   },
-  "plugins": [
-    {
-      "name": "aihub",
-      "source": "./aihub",
-      "version": "0.9.2",
-      "description": "AIhub image, video, audio, music, multimodal understanding and document workflows for Codex and WorkBuddy.",
-      "author": {
-        "name": "cookaihq"
-      },
-      "category": "productivity"
-    }
-  ]
+  "plugins": []
 }
